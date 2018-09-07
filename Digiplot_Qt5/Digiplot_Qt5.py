@@ -17,7 +17,7 @@ from LT.parameterfile import pfile
 # FFT
 import FFT
 
-convert_int = True #False
+convert_int = True
 
 import ffind_peaks as FP
 
@@ -81,34 +81,27 @@ def find_peaks(yval, ystep, xval = None, \
      MINTAB.append(pmin[:nmin])
      return [MAXTAB,MINTAB]
      
-#----------------------------------------------------------------------
-# dialog to enter numerical data, using a validator
-#----------------------------------------------------------------------
+
 
 class NavigationToolbar(NavigationToolbar2QT):
     def __init__(self, canvas, parent, coordinates=True):
         NavigationToolbar2QT.__init__(self, canvas, parent, coordinates=True)
         self.axes = self.parent.axes
-        self.myinitdata = 0.
         self.N = 1000
         
         self.Ncontrol= QtWidgets.QLineEdit(self)
         self.Ncontrol.setValidator(QtGui.QIntValidator(self.Ncontrol))
         self.Ncontrol.setFixedWidth(50)
         self.Ncontrol.setText(str(self.N))
-        
-        self.refr=QtWidgets.QPushButton(QtGui.QIcon('refresh.png'), None, self)
-          
-        self.refr.clicked.connect(self.getN)
-        
-        #self.Ncontrol.textChanged.connect(self.getN)
-          
         self.Nlabel=QtWidgets.QLabel('Data points on Fig, N=', self)
         
         
-        self.Ncact=self.addWidget(self.Nlabel)
-        self.Nlact=self.addWidget(self.Ncontrol)
-        self.Nrefr=self.addWidget(self.refr)
+        self.refr=QtWidgets.QPushButton(QtGui.QIcon('refresh.png'), None, self)
+        self.refr.clicked.connect(self.getN)
+          
+        self.addWidget(self.Nlabel)
+        self.addWidget(self.Ncontrol)
+        self.addWidget(self.refr)
     
     # to remove matplotlib toolbar status line
     def set_message(self, msg):
@@ -117,49 +110,52 @@ class NavigationToolbar(NavigationToolbar2QT):
     def getN(self):
       self.N = int(self.Ncontrol.text())
       try:
-          self.my_rescale()
+          self.axes.set_autoscaley_on(True)
+          self.thinning()
       except:
-          print 'No plot yet to rescale'
+          print "Thinnning didn't work properly."
+          
     def back(self, *args):
         NavigationToolbar2QT.back(self, *args)
-        self.my_rescale()
+        self.thinning()
         
     def forward(self, *args):
         NavigationToolbar2QT.forward(self, *args)
-        self.my_rescale()
-    
-    def release_pan(self, event):
-        NavigationToolbar2QT.release_pan(self, event)
-        self.my_rescale()
+        self.thinning()
         
     def home(self, *args):
         NavigationToolbar2QT.home(self, *args)
-        self.my_rescale()
+        self.thinning()
+        
+    def release_pan(self, event):
+        NavigationToolbar2QT.release_pan(self, event)
+        self.thinning()
         
     def release_zoom(self, event):
         NavigationToolbar2QT.release_zoom(self, event)
-        self.my_rescale()     
+        self.thinning()     
         
     #rescale and replot
     # this function drops unnecessary ponts in ploting region to reduce
     # plotting delays, but keeps everything above threshold to see peaks
-    def my_rescale(self):
+    def thinning(self):
         
-        t=self.myinitdata[0]
-        V=self.myinitdata[1]
-#        rest=self.myinitdata[2:]
+        t=self.t
+        V=self.V
         self.axes=self.parent.axes
         ax=self.axes
+        
         (xmin, xmax)=ax.get_xlim()
         rng=xmax-xmin
         #get original data which is in plotting region
-        org_points=np.where(((xmin - 2*rng) < t) & (t < (xmax + 2*rng)))
-        if (xmin- 2*rng)<t[0] or (xmax+2*rng)>t[-1]:
-            k= (-max(xmin-2*rng, t[0])+min(t[-1], xmax+2*rng))/(xmax-xmin)
-        else: k=5 # 1 +/-2 reagions to the siedes (for dragging thing)
+        org_points=np.where(((xmin - 1*rng) < t) & (t < (xmax + 1*rng)))
+#        if (xmin- 1*rng)<t[0] or (xmax+1*rng)>t[-1]:
+#            k= (-max(xmin-1*rng, t[0])+min(t[-1], xmax+1*rng))/(xmax-xmin)
+#        else: k=3 # 1 +/-1 reagions to the siedes (for dragging thing)
         to=t[org_points]
         Vo=V[org_points]
         n=1 #take every nth point from data
+        k=1
         if len(to)/k> self.N:
             n=int(len(to)/k/self.N)
         tcut=to[::n]
@@ -167,12 +163,13 @@ class NavigationToolbar(NavigationToolbar2QT):
         
         ax.set_prop_cycle(None)
         ax.lines.remove(self.parent.all_plot[0])
-        ax.autoscale(enable=False, axis='x', tight=True)
+        ax.autoscale(enable=False, axis='x', tight=False)
+        self.parent.all_plot=ax.plot(tcut,Vcut, *self.rest, zorder=0, **self.kwargs)
+#        if self.parent.par['draw_lines']:
+#            self.parent.all_plot=ax.plot(tcut,Vcut, zorder=0)
+#        else:
+#            self.parent.all_plot=ax.plot(tcut,Vcut, '.', zorder=0)
         ax.set_autoscaley_on(False)
-        if self.parent.par['draw_lines']:
-            self.parent.all_plot=ax.plot(tcut,Vcut, zorder=0)
-        else:
-            self.parent.all_plot=ax.plot(tcut,Vcut, '.', zorder=0)
         ax.figure.canvas.draw()
         
 
@@ -449,10 +446,11 @@ class TSPlotFrame(QtWidgets.QMainWindow):
         tcut=t[::n]
         Vcut=V[::n]
       
-        ax.autoscale(enable=True, axis='x', tight=True)
-        return ax.plot(tcut, Vcut, *rest, **kwargs)      
-
+        ax.autoscale(enable=True, axis='x', tight=False)
+        
      
+        return ax.plot(tcut, Vcut, *rest, **kwargs)      
+        
 
 #--
 # Classes for processing files selection
@@ -525,7 +523,8 @@ class Repository(QtWidgets.QDialog):
 #----------------------------------------------------------------------
 class PlotFrame(QtWidgets.QMainWindow):
      def __init__(self, parent):
-          QtWidgets.QMainWindow.__init__(self)
+          super(PlotFrame, self).__init__()
+          #QtWidgets.QMainWindow.__init__(self)
          
           self.setWindowTitle('DigiPlot')
           
@@ -621,12 +620,14 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.figure = Figure(figsize=(10,6))
           self.axes = self.figure.add_subplot(111)
           self.figure_canvas = FigureCanvas(self.figure)
-          #  Note that event is a MplEvent
           self.figure_canvas.mpl_connect('motion_notify_event', self.UpdateStatusBar)
           self.figure_canvas.mpl_connect('figure_enter_event', self.ChangeCursor)
           
-          # put figure cancas in center of Main Window
-          self.setCentralWidget(self.figure_canvas)
+         
+          
+          #self.setCentralWidget(self.figure_canvas)
+          
+          
           
           # add ToolBar
           self.toolbar = NavigationToolbar(self.figure_canvas, self)
@@ -642,29 +643,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.setGeometry(150,150,800,600)
           self.createMenubar()
           self.show()
-          
-     #plotframe my plot
-     def my_plot(self, *args, **kwargs):
-        
-        N=kwargs.pop('N', self.toolbar.N)
-        ax=self.axes
-        
-        #saves input data into toolbar class object and reuses later
-        self.toolbar.myinitdata = args
-        
-        #dropping points for first plot
-        t=args[0]
-        V=args[1]
-        rest=args[2:]
-        n=1 
-        #take every nth point from data
-        if len(t)> N:
-            n=int(len(t)/N)
-        tcut=t[::n]
-        Vcut=V[::n]
-      
-        ax.autoscale(enable=True, axis='x', tight=True)
-        return ax.plot(tcut, Vcut, *rest, **kwargs)
+
         
      def proclistload(self): #load list of processed files
         path_to_watch = self.datadir
@@ -908,109 +887,23 @@ class PlotFrame(QtWidgets.QMainWindow):
              # User has selected something, get the path, set the window's title to the path
              filename=file_dlg[0]
              # store relevant file information
-             self.set_file_info(filename)
+             self.OpenFile(filename)
          else:
              print "so, you changed your mind, I will do nothing"
              filename = None
              return
          
-            
-         # get channel number
-         chan_num = "%0d"%(int(self.par["Detector channel"]))
-         self.stBar1.setText('Current file : %s / Channel : %s'%(self.name+self.ext, chan_num))
-         # open file
-         print "Open file : ",self.dir + self.name + self.ext
-         self.f = h5py.File(self.dir + self.name + self.ext, 'r')
-         # get the data
-         # time information
-         print "Get data"
-         data_root = 'wfm_group0/traces/trace' + chan_num + '/'
-         try:
-             self.t0 = self.f[data_root + 'x-axis'].attrs['start']
-             self.dt = self.f[data_root + 'x-axis'].attrs['increment']
-             # measured data
-             # scale dataset
-             self.scale = self.f[data_root + 'y-axis/scale_coef'].value
-             # get the y dataset
-             self.nall = self.f[data_root + 'y-axis/data_vector/data'].shape[0]
-         except:
-             mb=QtWidgets.QMessageBox(self)
-             mb.setText("Problems loading data " + data_root)
-             mb.exec_()
-             return
-         self.ndata = self.nall
-         self.ti = self.t0
-         self.tf = self.t0 + (self.ndata-1)*self.dt        
-         self.par["tmin"] = self.t0
-         self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
-         # WB temp solution 8/13/13
-         # set the type as 16 bit signed, this is not good the data type should come from
-         # the hdf file
-         if convert_int:
-              self.ydata = self.f[data_root + 'y-axis/data_vector/data'].value.astype('int16')
-         else:
-              self.ydata = self.f[data_root + 'y-axis/data_vector/data'].value
-
-         # make the time axis
-         print "Calculate data"
-         self.tall = self.t0 + self.dt*np.arange(self.ydata.shape[0], dtype = float)
-         # select the data to be worked on
-         self.f.close()
-         print "Select data"
-         self.select_data()
-         print "Done"
          
      def OpenFile(self, fpname):
-         
          self.set_file_info(fpname)
-         chan_num = "%0d"%(int(self.par["Detector channel"]))
-         self.stBar1.setText('Current file : %s / Channel : %s'%(self.name+self.ext, chan_num))
-         # open file
-         print "Open file : ",self.dir + self.name + self.ext
-         self.f = h5py.File(self.dir + self.name + self.ext, 'r')
-         # get the data
-         # time information
-         print "Get data"
-         data_root = 'wfm_group0/traces/trace' + chan_num + '/'
-         try:
-             self.t0 = self.f[data_root + 'x-axis'].attrs['start']
-             self.dt = self.f[data_root + 'x-axis'].attrs['increment']
-             # measured data
-             # scale dataset
-             self.scale = self.f[data_root + 'y-axis/scale_coef'].value
-             # get the y dataset
-             self.nall = self.f[data_root + 'y-axis/data_vector/data'].shape[0]
-         except:
-             mb=QtWidgets.QMessageBox(self)
-             mb.setText("Problems loading data " + data_root)
-             mb.exec_()
-             return
-         self.ndata = self.nall
-         self.ti = self.t0
-         self.tf = self.t0 + (self.ndata-1)*self.dt        
+         self.OnLoad()
          self.par["tmin"] = self.t0
-         self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
-         # WB temp solution 8/13/13
-         # set the type as 16 bit signed, this is not good the data type should come from
-         # the hdf file
-         if convert_int:
-              self.ydata = self.f[data_root + 'y-axis/data_vector/data'].value.astype('int16')
-         else:
-              self.ydata = self.f[data_root + 'y-axis/data_vector/data'].value
-
-         # make the time axis
-         print "Calculate data"
-         self.tall = self.t0 + self.dt*np.arange(self.ydata.shape[0], dtype = float)
-         # select the data to be worked on
-         self.f.close()
-         print "Select data"
+         self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt   
          self.select_data()
-         print "Done"    
-         
+         print "Done"
 
-     def OnReload(self):
-         # reload data file
-         # get channel number
+     def OnLoad(self):
+         
          chan_num = "%0d"%(int(self.par["Detector channel"]))
          self.stBar1.setText('Current file : %s / Channel : %s'%(self.name+self.ext, chan_num))
          # open file
@@ -1036,7 +929,7 @@ class PlotFrame(QtWidgets.QMainWindow):
          self.ndata = self.nall
          self.ti = self.t0
          self.tf = self.t0 + (self.ndata-1)*self.dt        
-         # self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
+         
          # WB temp solution 8/13/13
          # set the type as 16 bit signed, this is not good the data type should come from
          # the hdf file
@@ -1044,12 +937,16 @@ class PlotFrame(QtWidgets.QMainWindow):
               self.ydata = self.f[data_root + 'y-axis/data_vector/data'].value.astype('int16')
          else:
               self.ydata = self.f[data_root + 'y-axis/data_vector/data'].value
+
          # make the time axis
          print "Calculate data"
          self.tall = self.t0 + self.dt*np.arange(self.ydata.shape[0], dtype = float)
          # select the data to be worked on
          self.f.close()
          print "Select data"
+     
+     def OnReload(self):
+         self.OnLoad()
          self.select_data()
          print "Done"
          
@@ -1239,10 +1136,39 @@ class PlotFrame(QtWidgets.QMainWindow):
           
           self.destroy()
           # all done
+     #plotframe my plot
+     def my_plot(self, *args, **kwargs):
+        
+        N=kwargs.pop('N', self.toolbar.N)
+        ax=self.axes
+        
+        
+        t=args[0]
+        V=args[1]
+        rest=args[2:]
+         
+        #save input data into toolbar class object and reuses later
+        self.toolbar.N = N
+        self.toolbar.t = t
+        self.toolbar.V = V
+        self.toolbar.rest =  rest
+        self.toolbar.kwargs = kwargs
+        
+        #dropping points for first plot
+        #take every nth point from data
+        n=1
+        if len(t)> N:
+            n=int(len(t)/N)
+        tcut=t[::n]
+        Vcut=V[::n]
+      
+        ax.autoscale(enable=True, axis='x', tight=False)
+        return ax.plot(tcut, Vcut, *rest, **kwargs)
      #----------------------------------------------------------------------
      # Action menu routines   
      #----------------------------------------------------------------------
      def OnPlot(self):
+          self.setCentralWidget(self.figure_canvas)
           V = None
           if self.par["filtered"]:
                V = self.Vinv
@@ -1645,6 +1571,9 @@ class PlotFrame(QtWidgets.QMainWindow):
           # now set the new parameters
           self.par['Detector channel']=int(pdlg.data[pkeys[0]])
           pdlg.destroy()
+          
+          self.OnReload()
+          self.OnPlot()
 
      def OnSelectTimeSlot(self):
           # show and change the parameters
@@ -1911,9 +1840,9 @@ if __name__ == '__main__':
     
     #Create PlotFrame in App
     frame = PlotFrame(app)
-    frame.LoadParameters('C:/Users/Alex/Desktop/test_data/params.data')
+    #frame.LoadParameters('C:/Users/Alex/Desktop/test_data/params.data')
     #RatesForAlS(app, 0)
-    sys.exit(app.exec_()) 
+    #sys.exit(app.exec_()) 
     
      
      

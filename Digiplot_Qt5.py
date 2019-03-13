@@ -1,5 +1,4 @@
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt5 import NavigationToolbar2QT
 from matplotlib.widgets import RectangleSelector
 import matplotlib.pyplot as pl 
 from matplotlib.figure import Figure
@@ -9,16 +8,19 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import h5py
 import sys
 import os
-import time
+#import time
 import numpy as np
 # general LabTools
 import LT.box
 from LT.parameterfile import pfile
 # FFT
 import FFT
+#Navigation toolbar and number dialog
+from NavToolBar_NumberDial import NavigationToolbar, NumberDialog
 
 convert_int = True
-
+colors = ['red', 'green', 'blue', 'magenta', 'cyan', 'orange',
+          'lavenderblush', 'maroon', 'plum']
 import ffind_peaks as FP
 
 #----------------------------------------------------------------------
@@ -83,169 +85,7 @@ def find_peaks(yval, ystep, xval = None, \
      
 
 
-class NavigationToolbar(NavigationToolbar2QT):
-    def __init__(self, canvas, parent, coordinates=True):
-        NavigationToolbar2QT.__init__(self, canvas, parent, coordinates=True)
-        self.axes = self.parent.axes
-        self.N = 1000
-        
-        self.Ncontrol= QtWidgets.QLineEdit(self)
-        self.Ncontrol.setValidator(QtGui.QIntValidator(self.Ncontrol))
-        self.Ncontrol.setFixedWidth(50)
-        self.Ncontrol.setText(str(self.N))
-        self.Nlabel=QtWidgets.QLabel('Data points on Fig, N=', self)
-        
-        
-        self.refr=QtWidgets.QPushButton(QtGui.QIcon('refresh.png'), None, self)
-        self.refr.clicked.connect(self.getN)
-          
-        self.addWidget(self.Nlabel)
-        self.addWidget(self.Ncontrol)
-        self.addWidget(self.refr)
-    
-    # to remove matplotlib toolbar status line
-    def set_message(self, msg):
-        pass
-    
-    def getN(self):
-      self.N = int(self.Ncontrol.text())
-      try:
-          self.axes.set_autoscaley_on(True)
-          self.thinning()
-      except:
-          print "Thinnning didn't work properly."
-          
-    def back(self, *args):
-        NavigationToolbar2QT.back(self, *args)
-        self.thinning()
-        
-    def forward(self, *args):
-        NavigationToolbar2QT.forward(self, *args)
-        self.thinning()
-        
-    def home(self, *args):
-        NavigationToolbar2QT.home(self, *args)
-        self.thinning()
-        
-    def release_pan(self, event):
-        NavigationToolbar2QT.release_pan(self, event)
-        self.thinning()
-        
-    def release_zoom(self, event):
-        NavigationToolbar2QT.release_zoom(self, event)
-        self.thinning()     
-        
-    #rescale and replot
-    # this function drops unnecessary ponts in ploting region to reduce
-    # plotting delays, but keeps everything above threshold to see peaks
-    def thinning(self):
-        
-        t=self.t
-        V=self.V
-        self.axes=self.parent.axes
-        ax=self.axes
-        
-        (xmin, xmax)=ax.get_xlim()
-        rng=xmax-xmin
-        #get original data which is in plotting region
-        org_points=np.where(((xmin - 1*rng) < t) & (t < (xmax + 1*rng)))
-#        if (xmin- 1*rng)<t[0] or (xmax+1*rng)>t[-1]:
-#            k= (-max(xmin-1*rng, t[0])+min(t[-1], xmax+1*rng))/(xmax-xmin)
-#        else: k=3 # 1 +/-1 reagions to the siedes (for dragging thing)
-        to=t[org_points]
-        Vo=V[org_points]
-        n=1 #take every nth point from data
-        k=1
-        if len(to)/k> self.N:
-            n=int(len(to)/k/self.N)
-        tcut=to[::n]
-        Vcut=Vo[::n]
-        
-        ax.set_prop_cycle(None)
-        ax.lines.remove(self.parent.all_plot[0])
-        ax.autoscale(enable=False, axis='x', tight=False)
-        self.parent.all_plot=ax.plot(tcut,Vcut, *self.rest, zorder=0, **self.kwargs)
-#        if self.parent.par['draw_lines']:
-#            self.parent.all_plot=ax.plot(tcut,Vcut, zorder=0)
-#        else:
-#            self.parent.all_plot=ax.plot(tcut,Vcut, '.', zorder=0)
-        ax.set_autoscaley_on(False)
-        ax.figure.canvas.draw()
-        
 
-
-class NumberDialog(QtWidgets.QDialog):
-     def __init__(self, data, parent = None, title = 'Enter parameters', labels=['First Label','Second Label'],
-                  keys=['first','second'], about_txt = 'about_txt'):
-          
-          self.parent=parent
-          self.keys=keys
-          self.data=data
-          QtWidgets.QDialog.__init__(self, parent)
-          self.setWindowFlags(self.windowFlags() ^ QtCore.Qt.WindowContextHelpButtonHint)
-          self.setWindowTitle(title)
-          self.layout=QtWidgets.QGridLayout(self)
-          about = QtWidgets.QLabel(about_txt, self)
-          ok=QtWidgets.QPushButton('Ok', self)
-          ok.setDefault(True)
-          cancel=QtWidgets.QPushButton('Cancel', self)
-          ok.clicked.connect(self.OnOk)
-          cancel.clicked.connect(self.OnCancel)
-          sepline=QtWidgets.QFrame()
-          sepline.setFrameShape(QtWidgets.QFrame.HLine)
-          sepline.setFrameShadow(QtWidgets.QFrame.Sunken)
-          
-          self.layout.addWidget(about, 0, 0)
-          self.layout.addWidget(sepline, 1, 0, 1, 2)
-          
-          
-          # loop over keys to add controls and validators
-          nrow = len(keys)+1
-          #qle - qlinedit dictionary to retrieve data later
-          self.qle={}
-          for i, key in enumerate(keys):
-               Val_l  = QtWidgets.QLabel(labels[i], self)
-               Val_t  = QtWidgets.QLineEdit(self)
-               Val_t.setValidator(QtGui.QDoubleValidator(self))
-               
-               Val_t.textChanged.connect(self.check_state)
-               Val_t.setText(data.get(key))
-               self.layout.addWidget(Val_l, i+2, 0)
-               self.layout.addWidget(Val_t, i+2, 1)
-               
-               self.qle[key]=Val_t
-                       
-          self.layout.addWidget(ok, nrow+2, 0)
-          self.layout.addWidget(cancel, nrow+2, 1)
-          
-     def check_state(self, *args, **kwargs):
-         
-        sender = self.sender()
-        validator = sender.validator()
-        state = validator.validate(sender.text(), 0)[0]
-        if state == QtGui.QValidator.Acceptable:
-            color = '#c4df9b' # green
-        elif state == QtGui.QValidator.Intermediate:
-            color = '#fff79a' # yellow
-        else:
-            color = '#f6989d' # red
-        sender.setStyleSheet('QLineEdit { background-color: %s }' % color)
-        
-     def OnOk(self):
-         for i, key in enumerate(self.keys):
-             try:
-                 self.data[key]=self.qle[key].text()
-             except:
-                 mb=QtWidgets.QMessageBox(self)
-                 mb.setWindowTitle('Entry error')
-                 mb.setText("Please enter the missing parameter")
-                 mb.exec_()
-                 self.qle[key].setFocus()
-                 return
-         self.close()
-     
-     def OnCancel(self):
-         self.destroy()
 
 
 
@@ -453,70 +293,70 @@ class TSPlotFrame(QtWidgets.QMainWindow):
         
 
 #--
-# Classes for processing files selection
-class Repository(QtWidgets.QDialog):
-    def __init__(self, parent = None, title = 'Choose files to process', files=None):
-          
-        QtWidgets.QDialog.__init__(self, parent)
-        self.parent=parent
-        self.setWindowFlags(self.windowFlags() ^ QtCore.Qt.WindowContextHelpButtonHint)
-        self.setWindowTitle(title)
-        self.layout=QtWidgets.QGridLayout(self)
-        
-        ok=QtWidgets.QPushButton('Ok', self)
-        ok.setDefault(True)
-        cancel=QtWidgets.QPushButton('Cancel', self)
-        ok.clicked.connect(self.OnOk)
-        cancel.clicked.connect(self.OnCancel)
-        selall=QtWidgets.QPushButton('Select All', self)
-        selall.clicked.connect(self.OnSelectAll)
-        desall=QtWidgets.QPushButton('Deselect All', self)
-        desall.clicked.connect(self.OnDeselectAll)
-          
-        self.layout.addWidget(selall, 0, 0)
-        self.layout.addWidget(desall, 0, 1)                
-        self.layout.addWidget(ok, 3, 0)
-        self.layout.addWidget(cancel, 3, 1)
+## Classes for processing files selection
+#class Repository(QtWidgets.QDialog):
+#    def __init__(self, parent = None, title = 'Choose files to process', files=None):
 #          
-        self.files=files
-        self.parent=parent
-        
-        self.model = QtGui.QStandardItemModel()
-        
-        
-        for i in files:
-            item = QtGui.QStandardItem(i)
-            item.setCheckable(True)
-            self.model.appendRow(item)
-        
-        view=QtWidgets.QListView(parent)
-        view.setModel(self.model)
-        self.layout.addWidget(view, 1, 0, 2, 2)
-        self.show()
+#        QtWidgets.QDialog.__init__(self, parent)
+#        self.parent=parent
+#        self.setWindowFlags(self.windowFlags() ^ QtCore.Qt.WindowContextHelpButtonHint)
+#        self.setWindowTitle(title)
+#        self.layout=QtWidgets.QGridLayout(self)
+#        
+#        ok=QtWidgets.QPushButton('Ok', self)
+#        ok.setDefault(True)
+#        cancel=QtWidgets.QPushButton('Cancel', self)
+#        ok.clicked.connect(self.OnOk)
+#        cancel.clicked.connect(self.OnCancel)
+#        selall=QtWidgets.QPushButton('Select All', self)
+#        selall.clicked.connect(self.OnSelectAll)
+#        desall=QtWidgets.QPushButton('Deselect All', self)
+#        desall.clicked.connect(self.OnDeselectAll)
+#          
+#        self.layout.addWidget(selall, 0, 0)
+#        self.layout.addWidget(desall, 0, 1)                
+#        self.layout.addWidget(ok, 3, 0)
+#        self.layout.addWidget(cancel, 3, 1)
+##          
+#        self.files=files
+#        self.parent=parent
+#        
+#        self.model = QtGui.QStandardItemModel()
+#        
+#        
+#        for i in files:
+#            item = QtGui.QStandardItem(i)
+#            item.setCheckable(True)
+#            self.model.appendRow(item)
+#        
+#        view=QtWidgets.QListView(parent)
+#        view.setModel(self.model)
+#        self.layout.addWidget(view, 1, 0, 2, 2)
+#        self.show()
+##
+#    def OnSelectAll(self):
+#        for index in range(self.model.rowCount()):
+#            item = self.model.item(index)
+#            if item.isCheckable() and item.checkState() == QtCore.Qt.Unchecked:
+#                item.setCheckState(QtCore.Qt.Checked)
 #
-    def OnSelectAll(self):
-        for index in range(self.model.rowCount()):
-            item = self.model.item(index)
-            if item.isCheckable() and item.checkState() == QtCore.Qt.Unchecked:
-                item.setCheckState(QtCore.Qt.Checked)
-
-    def OnDeselectAll(self, event):
-       for index in range(self.model.rowCount()):
-            item = self.model.item(index)
-            if item.isCheckable() and item.checkState() == QtCore.Qt.Checked:
-                item.setCheckState(QtCore.Qt.Unchecked)
-
-    def OnOk(self):
-        for index in range(self.model.rowCount()):
-            item = self.model.item(index)
-            if item.isCheckable() and item.checkState() == QtCore.Qt.Checked:
-                self.parent.hwstodo.append(self.files[index])
-        self.hide()
-        self.parent.Process()
-        self.destroy()
-        
-    def OnCancel(self):
-         self.destroy()
+#    def OnDeselectAll(self, event):
+#       for index in range(self.model.rowCount()):
+#            item = self.model.item(index)
+#            if item.isCheckable() and item.checkState() == QtCore.Qt.Checked:
+#                item.setCheckState(QtCore.Qt.Unchecked)
+#
+#    def OnOk(self):
+#        for index in range(self.model.rowCount()):
+#            item = self.model.item(index)
+#            if item.isCheckable() and item.checkState() == QtCore.Qt.Checked:
+#                self.parent.hwstodo.append(self.files[index])
+#        self.hide()
+#        self.parent.Process()
+#        self.destroy()
+#        
+#    def OnCancel(self):
+#         self.destroy()
 
 #----------------------------------------------------------------------
 # master frame, contains the plot image
@@ -557,7 +397,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["ts_Vhmax"] = 1.0
           self.par["ts_VNbins"] = 100
           
-          self.datadir = './'
+          self.datadir = '../Raw_Data/'
           self.dt = -1.
           # inital settings
           self.ndata = 0
@@ -583,13 +423,13 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.hwsproc = [] #hws files selection 
           self.hwsnew = []
           self.hwstodo = []
-          #load list of processed files
-          self.proclistload() 
+#          #load list of processed files
+#          self.proclistload() 
           
           # file information data
           self.parent = parent
           self.full_name = None
-          self.dir = None
+          self.dir = '../Raw_Data/' #None
           self.par_dir = None
           self.hist_dir = None
           self.res_dir = None
@@ -623,6 +463,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.figure_canvas.mpl_connect('motion_notify_event', self.UpdateStatusBar)
           self.figure_canvas.mpl_connect('figure_enter_event', self.ChangeCursor)
           
+          self.all_plot=[]
          
           
           #self.setCentralWidget(self.figure_canvas)
@@ -645,35 +486,35 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.show()
 
         
-     def proclistload(self): #load list of processed files
-        path_to_watch = self.datadir
-        dircont = os.listdir (path_to_watch)
+#     def proclistload(self): #load list of processed files
+#        path_to_watch = self.datadir
+#        dircont = os.listdir (path_to_watch)
+#                
+#        if "ProcFiles.data" in dircont:
+#            print "\nLoad list of already processed files."
+#            fopen = open(self.datadir+"//ProcFiles.data")
+#            self.hwsproc=[x.strip('\n') for x in fopen.readlines()]
+#            
+#        else: 
+#            self.hwsproc=[]
+#            print "\nNo files were processed yet in current data directory."
                 
-        if "ProcFiles.data" in dircont:
-            print "\nLoad list of already processed files."
-            fopen = open(self.datadir+"//ProcFiles.data")
-            self.hwsproc=[x.strip('\n') for x in fopen.readlines()]
-            
-        else: 
-            self.hwsproc=[]
-            print "\nNo files were processed yet in current data directory."
-                
-     def proclistsave(self): #save list of processed files
-        path_to_watch = self.datadir
-        dircont = os.listdir (path_to_watch)
-                
-        if "ProcFiles.data" in dircont:
-            print "\nAppend list of processed files."
-            fopen = open(self.datadir+"//ProcFiles.data", 'a')
-            for item in self.hwsproc:
-                fopen.write("%s\n" % item)
-            fopen.close()
-        else: 
-            fopen = open(self.datadir+"//ProcFiles.data", 'w')
-            for item in self.hwsproc:
-                fopen.write("%s\n" % item)
-            fopen.close()
-            print "\nCreate list of processed files."
+#     def proclistsave(self): #save list of processed files
+#        path_to_watch = self.datadir
+#        dircont = os.listdir (path_to_watch)
+#                
+#        if "ProcFiles.data" in dircont:
+#            print "\nAppend list of processed files."
+#            fopen = open(self.datadir+"//ProcFiles.data", 'a')
+#            for item in self.hwsproc:
+#                fopen.write("%s\n" % item)
+#            fopen.close()
+#        else: 
+#            fopen = open(self.datadir+"//ProcFiles.data", 'w')
+#            for item in self.hwsproc:
+#                fopen.write("%s\n" % item)
+#            fopen.close()
+#            print "\nCreate list of processed files."
          
          
      def menuData(self): # data for the menu
@@ -688,8 +529,8 @@ class PlotFrame(QtWidgets.QMainWindow):
                 ("&Quit", "Quit program", self.OnCloseWindow)), # label, status and handler
                #
                ("&Actions",
-                ("&Scan data directory", "Scan directory", self.OnScan),
-                (None, None, None),  # creates a separator bar in the menu
+#                ("&Scan data directory", "Scan directory", self.OnScan),
+#                (None, None, None),  # creates a separator bar in the menu
                 ("&Plot", "Plot data", self.OnPlot),
                 (None, None, None),  # creates a separator bar in the menu
                 ("&FindPeaks", "find peaks in the plotting data", self.OnFindPeaks),
@@ -700,9 +541,9 @@ class PlotFrame(QtWidgets.QMainWindow):
                 ("&Clear Figure", "Clear figure", self.OnClear)),
                #
                ("&Parameters",
-                ("&Data directory", "Set data directory", self.OnSetScanDir), 
-                (None, None, None), 
-		("&Detector Channel", "Set detector channel", self.OnSelectChannel), 
+#                ("&Data directory", "Set data directory", self.OnSetScanDir), 
+#                (None, None, None),
+                ("&Detector Channel", "Set detector channel", self.OnSelectChannel), 
                 (None, None, None),			   
                 ("&Time Range", "Set time slot", self.OnSelectTimeSlot), 
                 (None, None, None),
@@ -796,52 +637,52 @@ class PlotFrame(QtWidgets.QMainWindow):
      #----------------------------------------------------------------------
      # File menu routines   
      #----------------------------------------------------------------------
-     def OnScan(self): #scan for new files in data directory
-        path_to_watch = self.datadir
-        before = self.hwsproc
-        after = os.listdir (path_to_watch)
-        newf = False
-        self.hwsnew = []
-        for f in after:
-            if f.endswith(".hws") and not f in before:
-                print "Unprocessed file -- ", f
-                newf = True
-                self.hwsnew.append(f)
-        print "Directory scanned for unprocessed .hws files \n"    
-        if newf: 
-            self.repo=Repository(self, 'Select files to process', self.hwsnew)
-        else: print 'No unprocessed files found'           
-                #print self.choosefiles
+#     def OnScan(self): #scan for new files in data directory
+#        path_to_watch = self.datadir
+#        before = self.hwsproc
+#        after = os.listdir (path_to_watch)
+#        newf = False
+#        self.hwsnew = []
+#        for f in after:
+#            if f.endswith(".hws") and not f in before:
+#                print "Unprocessed file -- ", f
+#                newf = True
+#                self.hwsnew.append(f)
+#        print "Directory scanned for unprocessed .hws files \n"    
+#        if newf: 
+#            self.repo=Repository(self, 'Select files to process', self.hwsnew)
+#        else: print 'No unprocessed files found'           
+#                #print self.choosefiles
                 
     
      #process selected files           
     
-     def Process(self): 
-        start_time=time.time()
-        for f in self.hwstodo:
-                
-                #self.LoadParameters("C://Users//plasma//Desktop//par.data")
-                #self.OnPlot(None)
-                for i in range(0,1):
-                    self.OnFindPeaks()
-                    self.OnHistogram()
-                    os.mkdir(self.dir+self.name+'//')
-                    self.histoframe.figure.savefig(self.dir+self.name+'//Histogram_ch'+str(i)+'.png')
-                
-                self.RatesForAllChan(f)
-                self.figure.savefig(self.dir+self.name+'//RatePlot.png')
-                self.hwsproc.append(f)
-                self.OnTShistogram()
-#                for i,h in enumerate(self.histos):
-#                    h_file = self.dir + self.name +'//histo_{0}.data'.format(i)
-#                    h.save(h_file)
-#                print " all histograms saved"
-        self.proclistsave()
-#        print self.hwstodo
-        self.hwstodo = []                
-        end_time=time.time()
-        work_time=end_time-start_time
-        print "Elapsed time ", work_time 
+#     def Process(self): 
+#        start_time=time.time()
+#        for f in self.hwstodo:
+#                
+#                #self.LoadParameters("C://Users//plasma//Desktop//par.data")
+#                #self.OnPlot(None)
+#                for i in range(0,1):
+#                    self.OnFindPeaks()
+#                    self.OnHistogram()
+#                    os.mkdir(self.dir+self.name+'//')
+#                    self.histoframe.figure.savefig(self.dir+self.name+'//Histogram_ch'+str(i)+'.png')
+#                
+#                self.RatesForAllChan(f)
+#                self.figure.savefig(self.dir+self.name+'//RatePlot.png')
+#                self.hwsproc.append(f)
+#                self.OnTShistogram()
+##                for i,h in enumerate(self.histos):
+##                    h_file = self.dir + self.name +'//histo_{0}.data'.format(i)
+##                    h.save(h_file)
+##                print " all histograms saved"
+#        self.proclistsave()
+##        print self.hwstodo
+#        self.hwstodo = []                
+#        end_time=time.time()
+#        work_time=end_time-start_time
+#        print "Elapsed time ", work_time 
         
      def RatesForAllChan(self,ftw):
          self.OnClear()
@@ -859,19 +700,19 @@ class PlotFrame(QtWidgets.QMainWindow):
              self.OnTSplotrate()
      
              
-     def OnSetScanDir(self):
-         
-         print "Set data directory"
-         dir_dlg=QtWidgets.QFileDialog.getExistingDirectory(self, 'Select a directory')
-         if dir_dlg != '':
-             # User has selected something, get the path, set the window's title to the path
-             # store relevant file information
-             self.datadir = dir_dlg
-         else:
-             print "so, you changed your mind, I will do nothing"
-             return
-         print 'Data directory: ', self.datadir
-         #self.proclistload()
+#     def OnSetScanDir(self):
+#         
+#         print "Set data directory"
+#         dir_dlg=QtWidgets.QFileDialog.getExistingDirectory(self, 'Select a directory')
+#         if dir_dlg != '':
+#             # User has selected something, get the path, set the window's title to the path
+#             # store relevant file information
+#             self.datadir = dir_dlg
+#         else:
+#             print "so, you changed your mind, I will do nothing"
+#             return
+#         print 'Data directory: ', self.datadir
+#         #self.proclistload()
                     
      def OnSelectFiles(self):
          # Create a file-open dialog in the current directory
@@ -897,8 +738,6 @@ class PlotFrame(QtWidgets.QMainWindow):
      def OpenFile(self, fpname):
          self.set_file_info(fpname)
          self.OnLoad()
-         self.par["tmin"] = self.t0
-         self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt   
          self.select_data()
          print "Done"
 
@@ -949,6 +788,24 @@ class PlotFrame(QtWidgets.QMainWindow):
          self.OnLoad()
          self.select_data()
          print "Done"
+         
+     def select_data(self):
+          # select data range to work on
+          # debuggin
+          if self.ndata == 0:
+              print 'No data to select' 
+              return
+          if self.par["tmin"]<self.tall[0]: self.par["tmin"] = self.tall[0]
+          if self.par["tmax"]>self.tall[-1]: self.par["tmax"] = self.tall[-1]  
+          print "Get Window"
+          sl = self.get_time_window( self.par["tmin"], self.par["tmax"])
+          # the final value
+          print "Recalculate"
+          self.ndata = sl.stop - sl.start
+          self.V = self.scale[0] + self.scale[1]*self.ydata[sl]
+          self.t = self.tall[sl]
+          
+          print "Finished recalculation"
          
      def OnLoadParameters(self):
           # Create a file-open dialog in the current directory
@@ -1059,25 +916,6 @@ class PlotFrame(QtWidgets.QMainWindow):
           nmax = min( (int( (tmax - self.t0)/self.dt ) + 1), self.nall -1 )
           return slice(nmin, nmax + 1)
 
-     def select_data(self):
-          # select data range to work on
-          # debuggin
-          if self.ndata == 0:
-               return
-          if (self.par["tmin"] < self.tall[0]):
-               self.par["tmin"] = self.tall[0]
-          if (self.par["tmax"] > self.tall[-1:][0]):
-               self.par["tmax"] = self.tall[-1:][0]
-          print "Get Window"
-          sl = self.get_time_window( self.par["tmin"], self.par["tmax"])
-          # the final value
-          print "Recalculate"
-          self.ndata = sl.stop - sl.start
-          self.V = self.scale[0] + self.scale[1]*self.ydata[sl]
-          self.t = self.tall[sl]
-          
-          print "Finished recalculation"
-
      def ChangeCursor(self, event):
           self.figure_canvas.setCursor(QtGui.QCursor(QtCore.Qt.CrossCursor))
 
@@ -1136,34 +974,6 @@ class PlotFrame(QtWidgets.QMainWindow):
           
           self.destroy()
           # all done
-     #plotframe my plot
-     def my_plot(self, *args, **kwargs):
-        
-        N=kwargs.pop('N', self.toolbar.N)
-        ax=self.axes
-        
-        
-        t=args[0]
-        V=args[1]
-        rest=args[2:]
-         
-        #save input data into toolbar class object and reuses later
-        self.toolbar.N = N
-        self.toolbar.t = t
-        self.toolbar.V = V
-        self.toolbar.rest =  rest
-        self.toolbar.kwargs = kwargs
-        
-        #dropping points for first plot
-        #take every nth point from data
-        n=1
-        if len(t)> N:
-            n=int(len(t)/N)
-        tcut=t[::n]
-        Vcut=V[::n]
-      
-        ax.autoscale(enable=True, axis='x', tight=False)
-        return ax.plot(tcut, Vcut, *rest, **kwargs)
      #----------------------------------------------------------------------
      # Action menu routines   
      #----------------------------------------------------------------------
@@ -1177,13 +987,12 @@ class PlotFrame(QtWidgets.QMainWindow):
           if (self.t is None) or (V is None):
                print "Nothing to plot !"
                return
-          if self.par["draw_lines"]:
-               self.all_plot=self.my_plot(self.t[:V.shape[0]], V)
-          else:
-               self.all_plot=self.my_plot(self.t[:V.shape[0]], V, '.') 
-          self.axes.set_xlabel('t')
-          self.axes.set_ylabel('V')
-          self.figure_canvas.draw()
+          self.toolbar.t.append(self.t)
+          self.toolbar.V.append(V)
+          self.toolbar.ch_n.append(self.par['Detector channel'])
+          self.toolbar.fn.append(self.name[-6:])
+        
+          self.toolbar.thinning()
 
      def OnClear(self):
           self.figure.clf()
@@ -1225,7 +1034,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                self.par["Vhmax"] = self.V_peak.max()
           
           self.axes.set_autoscaley_on(True)
-          self.axes.plot(self.t_peak,self.V_peak,'r.')
+          self.axes.plot(self.t_peak,self.V_peak, '.', color=colors[self.par['Detector channel']])
           self.figure_canvas.draw()
 
      def OnHistogram(self):
@@ -1573,7 +1382,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           pdlg.destroy()
           
           self.OnReload()
-          self.OnPlot()
+          #self.OnPlot()
 
      def OnSelectTimeSlot(self):
           # show and change the parameters
@@ -1789,7 +1598,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           print "limits = ", self.par["limits"], " measure = ", self.par["measure"]
 
      def OnLimits(self):
-          # to measure create a Rectangle Selector
+          # to measure create a Selector
           self.RS.set_active(True)
           self.par["measure"] = False
           self.par["limits"] = True
@@ -1806,7 +1615,10 @@ class PlotFrame(QtWidgets.QMainWindow):
      def OnToggleLines(self, event):
           self.par["draw_lines"] = not self.par["draw_lines"]
           print "draw Lines = ", self.par["draw_lines"]
-
+          try:
+              self.toolbar.thinning()
+          except:
+              'Thinning did not work'
      def OnUsefiltered(self, event):
           self.par["filtered"] = not self.par["filtered"]
           print "use filtered = ", self.par["filtered"]
@@ -1833,6 +1645,7 @@ def RatesForAlS(app, chnum):
          
 if __name__ == '__main__':
     #Create App
+    print 'kalalbaba'
     app = QtCore.QCoreApplication.instance()
     
     if app is None:
@@ -1842,7 +1655,8 @@ if __name__ == '__main__':
     frame = PlotFrame(app)
     #frame.LoadParameters('C:/Users/Alex/Desktop/test_data/params.data')
     #RatesForAlS(app, 0)
-    #sys.exit(app.exec_()) 
+    #sys.exit(app.exec_())
+    print 'kalalbaba'
     
      
      

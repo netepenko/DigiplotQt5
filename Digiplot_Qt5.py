@@ -1655,6 +1655,6 @@ if __name__ == '__main__':
     #frame.LoadParameters('C:/Users/Alex/Desktop/test_data/params.data')
     #RatesForAlS(app, 0)
     #sys.exit(app.exec_())
-    
+    #Test change
      
      

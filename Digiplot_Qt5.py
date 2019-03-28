@@ -1645,7 +1645,6 @@ def RatesForAlS(app, chnum):
          
 if __name__ == '__main__':
     #Create App
-    print 'kalalbaba'
     app = QtCore.QCoreApplication.instance()
     
     if app is None:
@@ -1656,7 +1655,6 @@ if __name__ == '__main__':
     #frame.LoadParameters('C:/Users/Alex/Desktop/test_data/params.data')
     #RatesForAlS(app, 0)
     #sys.exit(app.exec_())
-    print 'kalalbaba'
     
      
      

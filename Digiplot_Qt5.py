@@ -1,4 +1,5 @@
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5 import NavigationToolbar2QT
 from matplotlib.widgets import RectangleSelector
 import matplotlib.pyplot as pl 
 from matplotlib.figure import Figure
@@ -131,10 +132,10 @@ class HistoPlotFrame(QtWidgets.QMainWindow):
           #
           
           # add ToolBar
-          self.toolbar = NavigationToolbar(self.figure_canvas, self)
-          self.toolbar.removeAction(self.toolbar.Ncact)
-          self.toolbar.removeAction(self.toolbar.Nlact)
-          self.toolbar.removeAction(self.toolbar.Nrefr)
+          self.toolbar = NavigationToolbar2QT(self.figure_canvas, self)
+#          self.toolbar.removeAction(self.toolbar.Ncontrol)
+#          self.toolbar.removeAction(self.toolbar.Nlabel)
+#          self.toolbar.removeAction(self.toolbar.refr)
           self.addToolBar(self.toolbar)
           
           
@@ -1223,10 +1224,12 @@ class PlotFrame(QtWidgets.QMainWindow):
           rate = self.ts_counts/self.par["ts_width"]
           rate_err = np.sqrt(self.ts_counts)/self.par["ts_width"]
           
-          self.axes.errorbar(self.ts_av, rate, yerr = rate_err, marker='o', ls = 'None')
-          self.axes.set_xlabel('t')
-          self.axes.set_ylabel('Rate')
-          self.figure_canvas.draw()
+          f1=pl.figure()
+          pl.title('Rate')
+          f1.axes[0].errorbar(self.ts_av, rate, yerr = rate_err, marker='o', ls = 'None')
+          f1.axes[0].set_xlabel('t [s]')
+          f1.axes[0].set_ylabel('Rate [Hz]')
+          f1.draw()
          
 
 
@@ -1272,7 +1275,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           # clear histos list
           self.histos = []
           for i,Vp in enumerate(self.ts_Vp):
-               if Vp != None:
+               if Vp.any():
                    h = LT.box.histo( Vp, \
                                      range = (self.par["ts_Vhmin"], self.par["ts_Vhmax"]), \
                                      bins = int(self.par["ts_VNbins"]))
@@ -1654,7 +1657,7 @@ if __name__ == '__main__':
     frame = PlotFrame(app)
     #frame.LoadParameters('C:/Users/Alex/Desktop/test_data/params.data')
     #RatesForAlS(app, 0)
-    #sys.exit(app.exec_())
+    sys.exit(app.exec_())
     #Test change
      
      

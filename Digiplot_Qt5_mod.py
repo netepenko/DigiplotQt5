@@ -383,7 +383,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["xmax"] = 1.e30
           self.par["scale_x"] = 1.0
           self.par["scale_y"] = 1.0
-          self.par["Vstep"] = 1.0
+          self.par["Vstep"] = .3
           self.par["Vthreshold"] = 0.3
           self.par["Vhmin"] = 0.0
           self.par["Vhmax"] = 1.0
@@ -536,6 +536,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                 ("&FindPeaks", "find peaks in the plotting data", self.OnFindPeaks),
                 (None, None, None),
                 ("&Histogram", "histogram peak data", self.OnHistogram),
+                ("&Fit Histogram", "Fit histogram peak area", self.OnFitHistogram),
                 ("&Delete Histogram", "delete all histograms", self.OnDeleteHistogram),
                 (None, None, None),
                 ("&Clear Figure", "Clear figure", self.OnClear)),
@@ -1051,12 +1052,39 @@ class PlotFrame(QtWidgets.QMainWindow):
           histo.title = 'V histogram'
           histo.xlabel = 'Volts'
           histo.ylabel = 'Counts'
+          
           # add the histograms to the list of histos created
           self.histos.append( histo )
           # setup figure for hist plots
           latest_histo = len(self.histos) - 1
           self.show_histos(latest_histo)
+          
+          
+     def OnFitHistogram(self):
+         # fit current histo
+         # pl.sca(self.histoframe.axes)
+         h = self.histos[self.current_histo]
+         print "limits = ", self.histoframe.axes.get_xlim()
+         cmin, cmax = self.histoframe.axes.get_xlim()
+         h.fit(cmin, cmax)
+         h.plot_fit(axes =  self.histoframe.axes)
+         self.histoframe.figure_canvas.draw()
+         print 'FWHM = ', h.sigma.value*2.355          # 2.355 = 2sqrt(2ln2)
+                  
+         #apply calibration
+         mean        =  h.mean.value
+         wP          =  frame.V_peak                     # Peaks
+         wP_calib    =  wP/mean*5483.57                  # peak (KeV) = 5483.57
+         cmin_fit    =  cmin/mean*5483.57
+         cmax_fit    =  cmax/mean*5483.57
 
+         h = LT.box.histo(wP_calib, range=(cmin_fit*0.9, cmax_fit*1.1), bins= int(self.par["VNbins"]))
+         h.plot()
+         pl.title ('Histogram of Peak Amplitudes')
+         h.fit(cmin_fit, cmax_fit)
+         h.plot_fit()
+         print 'FWHM = ', h.sigma.value*2.355          # 2.355 = 2sqrt(2ln2)
+         
      def OnDeleteHistogram(self):
           self.histos = []
           self.current_histo = 0
@@ -1281,11 +1309,17 @@ class PlotFrame(QtWidgets.QMainWindow):
                    h.xlabel = 'Volts'
                    h.ylabel = 'Counts'
                    self.histos.append(h)
+                   
                else:
                    continue
           # hisograms created
           print "Time slice histograms completed, %d histograms added" %len(self.histos)
-
+          
+          vf1, vf2 =  0.5, .8
+          h.fit(vf1, vf2)
+          mean = h.mean.value
+          print mean
+         
      def OnTSshowhistos(self):
           if self.histos == []:
                print "No TS histos"
@@ -1655,6 +1689,7 @@ if __name__ == '__main__':
     frame = PlotFrame(app)
     #frame.LoadParameters('C:/Users/Alex/Desktop/test_data/params.data')
     #RatesForAlS(app, 0)
+    #app.exec_()
     #sys.exit(app.exec_())
     #Test change
      

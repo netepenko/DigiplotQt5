@@ -104,7 +104,9 @@ class NavigationToolbar(NavigationToolbar2QT):
             else:
                 all_plot_new.append(ax.plot(tcut,Vcut, '.', label='%s Ch %d'%(self.fn[i],self.ch_n[i]), alpha=0.5, color=colors[self.ch_n[i]+col_sh])[0])
             Vc=np.concatenate((Vc,Vcut[np.where((xmin < tcut) & (tcut < xmax))]))
-       
+        if len(Vc) == 0.:
+            print "Vc is empty"
+            return
         Vcmin=Vc.min()
         Vcmax=Vc.max()
         ax.set_ylim(min((Vcmin - 0.1), ymin), max(Vcmax + 0.1,ymax))

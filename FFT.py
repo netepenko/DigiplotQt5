@@ -50,7 +50,7 @@ class FFT:
           
      def transform( self, V):
           # calculate the FFT oeff.
-          print "Calculate FFT"
+          print("Calculate FFT")
           self.cn = FFTP.fft(V[:self.N])
           self.an0 = self.cn[0]
           # sin coefs
@@ -60,14 +60,14 @@ class FFT:
           # reverse bn for future work and to aplly cuts
           self.bnr = self.bn[::-1]
           self.rr = np.sqrt(self.an**2 + self.bnr**2)
-          print "FFT completed"
+          print("FFT completed")
         
      def get_ps(self):
           # get power spectrum
           pt = np.abs( self.cn )/ (self.N / 2.) 
           self.p = (pt[0:self.N/2]**2).clip(minval, maxval)
           self.ok = True
-          print "Power spectrum completed"
+          print("Power spectrum completed")
           
      def cut_freq(self, a, value = 0.):
           # cut freq. between self.xmin and self.xmax and replace them with value

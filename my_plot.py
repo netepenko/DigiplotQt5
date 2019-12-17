@@ -134,14 +134,14 @@ def my_plot(*args, **kwargs):
         ret = ax.plot(tcut, Vcut, *rest, **kwargs)
         return ret 
     except:
-        print "Plotting faild."
+        print("Plotting faild.")
     
 
     
     
         
 #for testing        
-my_plot(np.array(range(10000000)),np.array(range(10000000)),'.', N=10000)
+my_plot(np.array(list(range(10000000))),np.array(list(range(10000000))),'.', N=10000)
 #pl.plot(np.array(range(1000)),np.array(range(1000)),'.')
 
     

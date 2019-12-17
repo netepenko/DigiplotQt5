@@ -58,7 +58,7 @@ def peakdet(v, delta, x = None, gauge = None, power = 5):
     for i in arange(len(v)):
         if i%pstep == 0:
             if gauge == None:
-                print 'process value number = ', i
+                print('process value number = ', i)
             else:
                 gauge.Update(i, "%5.1f"%(float(i)/ndat*100.)+" % Completed" )
         this = v[i]
@@ -93,4 +93,4 @@ def peakdet(v, delta, x = None, gauge = None, power = 5):
 
 if __name__=="__main__":
     series = [0,0,0,2,0,0,0,-2,0,0,0,2,0,0,0,-2,0]
-    print peakdet(series,1)
+    print(peakdet(series,1))

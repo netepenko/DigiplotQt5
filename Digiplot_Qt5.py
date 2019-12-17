@@ -50,20 +50,20 @@ def find_peaks(yval, ystep, xval = None, \
      MAXTAB=[]
      MINTAB=[]
      if ((xmin == None) and (xmax == None)) or (not limits) or (get_window == None):
-          print "No limits present, analyze all data"
+          print("No limits present, analyze all data")
           results = np.zeros((2,), dtype = 'int32')
-          pmin = np.zeros((len(yval)/5, ), dtype='int32')
-          pmax = np.zeros((len(yval)/5, ), dtype='int32')
+          pmin = np.zeros((len(yval)//5, ), dtype='int32')
+          pmax = np.zeros((len(yval)//5, ), dtype='int32')
           try:
               FP.find_peaks(len(yval), ystep, yval, results, pmin, pmax)
           except:
-              print "problem with peak finding"
+              print("problem with peak finding")
               return []
           nmin = results[0]
           nmax = results[1]
      else:
           # get the window
-          print "Analyze data between ", xmin, " and ", xmax
+          print(("Analyze data between ", xmin, " and ", xmax))
           sl = get_window( xmin, xval, xmax)
           # progress dialog
           results = np.zeros((2,), dtype = 'int32')
@@ -72,7 +72,7 @@ def find_peaks(yval, ystep, xval = None, \
           try:
               FP.find_peaks(len(yval[sl]), ystep, yval[sl], results, pmin, pmax)
           except:
-               print "problem with peak finding"
+               print("problem with peak finding")
                return []
           nmin = results[0]
           nmax = results[1]
@@ -165,20 +165,20 @@ class HistoPlotFrame(QtWidgets.QMainWindow):
 
      def OnPrevhisto(self):
           if self.callback == None:
-               print "Prev button clicked !"
+               print("Prev button clicked !")
           else:
                self.callback.OnShow_prev_histo()
                
 
      def OnNexthisto(self):
           if self.callback == None:
-               print "Next button clicked !"
+               print("Next button clicked !")
           else:
                self.callback.OnShow_next_histo()
 
      def closeEvent(self, Event):
           
-          print "Close histo frame"
+          print("Close histo frame")
           self.callback.histoframe=None
           self.destroy()
 #----------------------------------------------------------------------
@@ -251,20 +251,20 @@ class TSPlotFrame(QtWidgets.QMainWindow):
 
      def closeEvent(self, Event):
           
-          print "Close timeslice frame"
+          print("Close timeslice frame")
           self.callback.tsplotframe=None
           self.destroy()
      
      
      def OnPrevslice(self):
           if self.callback == None:
-               print "Prev button clicked !"
+               print("Prev button clicked !")
           else:
                self.callback.OnShow_prev_slice()
 
      def OnNextslice(self):
           if self.callback == None:
-               print "Next button clicked !"
+               print("Next button clicked !")
           else:
                self.callback.OnShow_next_slice()
      
@@ -688,7 +688,7 @@ class PlotFrame(QtWidgets.QMainWindow):
      def RatesForAllChan(self,ftw):
          self.OnClear()
          try:
-             print (self.datadir + "/params.data")
+             print((self.datadir + "/params.data"))
              self.LoadParameters(self.datadir + "params.data")
          except:
              pass
@@ -731,7 +731,7 @@ class PlotFrame(QtWidgets.QMainWindow):
              # store relevant file information
              self.OpenFile(filename)
          else:
-             print "so, you changed your mind, I will do nothing"
+             print("so, you changed your mind, I will do nothing")
              filename = None
              return
          
@@ -740,18 +740,18 @@ class PlotFrame(QtWidgets.QMainWindow):
          self.set_file_info(fpname)
          self.OnLoad()
          self.select_data()
-         print "Done"
+         print("Done")
 
      def OnLoad(self):
          
          chan_num = "%0d"%(int(self.par["Detector channel"]))
          self.stBar1.setText('Current file : %s / Channel : %s'%(self.name+self.ext, chan_num))
          # open file
-         print "Open file : ",self.dir + self.name + self.ext
+         print(("Open file : ",self.dir + self.name + self.ext))
          self.f = h5py.File(self.dir + self.name + self.ext, 'r')
          # get the data
          # time information
-         print "Get data"
+         print("Get data")
          data_root = 'wfm_group0/traces/trace' + chan_num + '/'
          try:
              self.t0 = self.f[data_root + 'x-axis'].attrs['start']
@@ -779,34 +779,34 @@ class PlotFrame(QtWidgets.QMainWindow):
               self.ydata = self.f[data_root + 'y-axis/data_vector/data'].value
 
          # make the time axis
-         print "Calculate data"
+         print("Calculate data")
          self.tall = self.t0 + self.dt*np.arange(self.ydata.shape[0], dtype = float)
          # select the data to be worked on
          self.f.close()
-         print "Select data"
+         print("Select data")
      
      def OnReload(self):
          self.OnLoad()
          self.select_data()
-         print "Done"
+         print("Done")
          
      def select_data(self):
           # select data range to work on
           # debuggin
           if self.ndata == 0:
-              print 'No data to select' 
+              print('No data to select') 
               return
           if self.par["tmin"]<self.tall[0]: self.par["tmin"] = self.tall[0]
           if self.par["tmax"]>self.tall[-1]: self.par["tmax"] = self.tall[-1]  
-          print "Get Window"
+          print("Get Window")
           sl = self.get_time_window( self.par["tmin"], self.par["tmax"])
           # the final value
-          print "Recalculate"
+          print("Recalculate")
           self.ndata = sl.stop - sl.start
           self.V = self.scale[0] + self.scale[1]*self.ydata[sl]
           self.t = self.tall[sl]
           
-          print "Finished recalculation"
+          print("Finished recalculation")
          
      def OnLoadParameters(self):
           # Create a file-open dialog in the current directory
@@ -817,15 +817,15 @@ class PlotFrame(QtWidgets.QMainWindow):
                # User has selected something, get the path, set the window's title to the path
                filename = file_dlg[0]
                # store relevant file information
-               print "will open " , filename
+               print(("will open " , filename))
           else:
-               print "so, you changed your mind, I will do nothing"
+               print("so, you changed your mind, I will do nothing")
                filename = None
                return
           p = pfile(filename)
           for key in self.par:
                self.par[key] = p.get_value(key)
-               print key, " ", self.par[key]
+               print((key, " ", self.par[key]))
           # now set the check marks
           # get the menus
           
@@ -844,12 +844,12 @@ class PlotFrame(QtWidgets.QMainWindow):
                               item_dict[key] = item
           # set the values for the options menu
           if item_dict != {}:
-               item_dict["SetLimits"].setChecked(self.par["limits"]); print "SetLimits = ", self.par["limits"]
-               item_dict["Measure"].setChecked(self.par["measure"]); print "Measure = ", self.par["measure"]
-               item_dict["Use Limits"].setChecked(self.par["use_limits"]); print "Use Limits = ",self.par["use_limits"]
-               item_dict["Auto Histogram Limits"].setChecked(self.par["auto_histo"]); print "Auto Histogram Limits = ", self.par["auto_histo"]
-               item_dict["Filtered"].setChecked(self.par["filtered"]); print "Filtered = ", self.par["filtered"]
-               item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print "draw_lines = ", self.par["draw_lines"]
+               item_dict["SetLimits"].setChecked(self.par["limits"]); print(("SetLimits = ", self.par["limits"]))
+               item_dict["Measure"].setChecked(self.par["measure"]); print(("Measure = ", self.par["measure"]))
+               item_dict["Use Limits"].setChecked(self.par["use_limits"]); print(("Use Limits = ",self.par["use_limits"]))
+               item_dict["Auto Histogram Limits"].setChecked(self.par["auto_histo"]); print(("Auto Histogram Limits = ", self.par["auto_histo"]))
+               item_dict["Filtered"].setChecked(self.par["filtered"]); print(("Filtered = ", self.par["filtered"]))
+               item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print(("draw_lines = ", self.par["draw_lines"]))
           self.select_data()
           # all done
           
@@ -858,7 +858,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           p = pfile(fpname)
           for key in self.par:
                self.par[key] = p.get_value(key)
-               print key, " ", self.par[key]
+               print((key, " ", self.par[key]))
           # now set the check marks
           # get the menus
           
@@ -877,12 +877,12 @@ class PlotFrame(QtWidgets.QMainWindow):
                               item_dict[key] = item
           # set the values for the options menu
           if item_dict != {}:
-               item_dict["SetLimits"].setChecked(self.par["limits"]); print "SetLimits = ", self.par["limits"]
-               item_dict["Measure"].setChecked(self.par["measure"]); print "Measure = ", self.par["measure"]
-               item_dict["Use Limits"].setChecked(self.par["use_limits"]); print "Use Limits = ",self.par["use_limits"]
-               item_dict["Auto Histogram Limits"].setChecked(self.par["auto_histo"]); print "Auto Histogram Limits = ", self.par["auto_histo"]
-               item_dict["Filtered"].setChecked(self.par["filtered"]); print "Filtered = ", self.par["filtered"]
-               item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print "draw_lines = ", self.par["draw_lines"]
+               item_dict["SetLimits"].setChecked(self.par["limits"]); print(("SetLimits = ", self.par["limits"]))
+               item_dict["Measure"].setChecked(self.par["measure"]); print(("Measure = ", self.par["measure"]))
+               item_dict["Use Limits"].setChecked(self.par["use_limits"]); print(("Use Limits = ",self.par["use_limits"]))
+               item_dict["Auto Histogram Limits"].setChecked(self.par["auto_histo"]); print(("Auto Histogram Limits = ", self.par["auto_histo"]))
+               item_dict["Filtered"].setChecked(self.par["filtered"]); print(("Filtered = ", self.par["filtered"]))
+               item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print(("draw_lines = ", self.par["draw_lines"]))
           self.select_data()
           # all done
           
@@ -900,9 +900,9 @@ class PlotFrame(QtWidgets.QMainWindow):
                # User has selected something, get the path, set the window's title to the path
                filename = file_dlg[0]
                # store relevant file information
-               print "will save to " , filename
+               print(("will save to " , filename))
           else:
-               print "so, you changed your mind, I will do nothing"
+               print("so, you changed your mind, I will do nothing")
                filename = None
                return
           o = open(filename, 'w')
@@ -937,9 +937,9 @@ class PlotFrame(QtWidgets.QMainWindow):
                self.ymin = self.ymax
                self.ymax = ymax
           dpos = end_pos - start_pos
-          print "x positions    : %5.2e --> %5.2e" % (start_pos[0],  end_pos[0] )
-          print "y positions    : %5.2e --> %5.2e" % (start_pos[1],  end_pos[1] )
-          print "displacement :  delta-x = %5.2e   delta-y  = %5.2e " % tuple(dpos)
+          print(("x positions    : %5.2e --> %5.2e" % (start_pos[0],  end_pos[0] )))
+          print(("y positions    : %5.2e --> %5.2e" % (start_pos[1],  end_pos[1] )))
+          print(("displacement :  delta-x = %5.2e   delta-y  = %5.2e " % tuple(dpos)))
           if self.par["measure"]:
                # draw
                xpath = [self.par["xmin"], self.par["xmax"], self.par["xmax"], self.par["xmin"]]
@@ -966,12 +966,12 @@ class PlotFrame(QtWidgets.QMainWindow):
                try:
                     self.histoframe.destroy()
                except:
-                    print "cannot destroy histoframe !"
+                    print("cannot destroy histoframe !")
           if self.tsplotframe != None:
                try:
                     self.tsplotframe.destroy()
                except:
-                    print "cannot destroy tsplotframe !"
+                    print("cannot destroy tsplotframe !")
           
           self.destroy()
           # all done
@@ -986,7 +986,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           else:
                V = self.V
           if (self.t is None) or (V is None):
-               print "Nothing to plot !"
+               print("Nothing to plot !")
                return
           self.toolbar.t.append(self.t)
           self.toolbar.V.append(V)
@@ -1007,27 +1007,27 @@ class PlotFrame(QtWidgets.QMainWindow):
 
      def OnFindPeaks(self):
           if (self.t is None) or (self.V is None):
-               print "No data, nothing to find !"
+               print("No data, nothing to find !")
                return
           if self.par["filtered"]:
                if self.Vinv is None:
-                    print "No inverted data, nothing to find !"
+                    print("No inverted data, nothing to find !")
                     return
                V = self.Vinv
           else:
                V = self.V
-          print '----------> Start peak finding :'
+          print('----------> Start peak finding :')
           self.MAXTAB, self.MINTAB = find_peaks( V, self.par["Vstep"], xval = self.t, \
                                                  xmin = self.par["xmin"], xmax = self.par["xmax"], \
                                                  limits = self.par["use_limits"], \
                                                  get_window = get_window, \
                                                  power = 5)
-          print '----------> found ', len(self.MAXTAB[0]), ' peaks'
+          print(('----------> found ', len(self.MAXTAB[0]), ' peaks'))
           # get the values above the V threshold
           tp = np.array(self.MAXTAB[0])
           Vp = np.array(self.MAXTAB[1])
           iw = np.where( Vp > self.par["Vthreshold"] )[0]
-          print '----------> store ', len(iw), ' peaks above threshold'
+          print(('----------> store ', len(iw), ' peaks above threshold'))
           self.t_peak = tp[iw]
           self.V_peak = Vp[iw]
           if self.par["auto_histo"] and not len(iw) == 0:
@@ -1040,13 +1040,13 @@ class PlotFrame(QtWidgets.QMainWindow):
 
      def OnHistogram(self):
           if self.MAXTAB == None:
-               print "No peaks yet !"
+               print("No peaks yet !")
                return
           histo = LT.box.histo( self.V_peak, \
                                      range = (self.par["Vhmin"], self.par["Vhmax"]), \
                                      bins = int(self.par["VNbins"]))
           if histo == None:
-               print "No histogram to plot !"
+               print("No histogram to plot !")
                return
           histo.title = 'V histogram'
           histo.xlabel = 'Volts'
@@ -1068,7 +1068,7 @@ class PlotFrame(QtWidgets.QMainWindow):
 
      def OnSaveHistos(self):
           if self.histos == []:
-               print "no histograms to save !"
+               print("no histograms to save !")
                return
           # Create a file-open dialog in the current directory
           filetypes="*.data"
@@ -1085,19 +1085,19 @@ class PlotFrame(QtWidgets.QMainWindow):
                name, ext = os.path.splitext(fname)
                # store relevant file information
                N = len(self.histos)-1
-               print "will save to : "+dir+"/"+name+"_0.data ... " +name+"_{0}.data".format(N) 
+               print(("will save to : "+dir+"/"+name+"_0.data ... " +name+"_{0}.data".format(N))) 
           else:
-               print "so, you changed your mind, I will do nothing"
+               print("so, you changed your mind, I will do nothing")
                filename = None
                return
           for i,h in enumerate(self.histos):
                h_file = dir + '/'+ name +'_{0}.data'.format(i)
                h.save(h_file)
-          print " all histograms saved"
+          print(" all histograms saved")
 
      def show_histos(self, n):
           if self.histos == []:
-               print "no histograms to show !"
+               print("no histograms to show !")
                return
           # create it's own frame if it doesnot exist already
           self.current_histo = n
@@ -1113,7 +1113,7 @@ class PlotFrame(QtWidgets.QMainWindow):
 
      def show_slice(self, n):
           if self.t_slice is None:
-               print "no slices to show !"
+               print("no slices to show !")
                return
           # create it's own frame if it doesnot exist already
           self.current_slice = n
@@ -1128,7 +1128,7 @@ class PlotFrame(QtWidgets.QMainWindow):
 
      def OnTScalc(self):
           if (self.t is None) or (self.V is None):
-               print "No data, nothing to find !"
+               print("No data, nothing to find !")
                return
           # make sure the limits are within the data
           if (self.par["ts_start"] > self.par["ts_stop"]):
@@ -1152,24 +1152,24 @@ class PlotFrame(QtWidgets.QMainWindow):
           # the new data have the shape (slice_nr, data_in_slice)
           # axis-0 slice number
           # axis-1 data within slice 
-          print 'resizing time data array, be patient !'
+          print('resizing time data array, be patient !')
           self.t_slice = np.resize(self.t[sl], new_shape )
           if self.par["filtered"]:
                if self.Vinv is None:
-                    print "No inverted data, nothing to find !"
+                    print("No inverted data, nothing to find !")
                     return
                V = self.Vinv
           else:
                V = self.V
-          print 'resizing Signal data array, be patient !'
+          print('resizing Signal data array, be patient !')
           self.V_slice = np.resize(V, new_shape )
           # now the data are ready to be worked on
           self.ts_av = np.average(self.t_slice, axis = 1)
-          print "created ", len(self.ts_av), " slices"
+          print(("created ", len(self.ts_av), " slices"))
 
      def tsplot(self, n):
           if self.V_slice is None:
-               print "No time slices!"
+               print("No time slices!")
                return
           V = self.V_slice[n]
           t = self.t_slice[n]
@@ -1192,23 +1192,23 @@ class PlotFrame(QtWidgets.QMainWindow):
  
      def OnTSfindpeaks(self):
           if self.V_slice is None:
-               print "No time slices!"
+               print("No time slices!")
                return
           ts_tp = []
           ts_Vp = []
           ts_counts = []
           for i,V in enumerate(self.V_slice):
-               print '----------> Start peak finding in slice :', i
+               print(('----------> Start peak finding in slice :', i))
                MAXTAB, MINTAB = find_peaks( V, self.par["Vstep"], xval = self.t_slice[i], \
                                                       limits = False, \
                                                       get_window = get_window, \
                                                       power = 5)
-               print '----------> found ', len(MAXTAB[0]), ' peaks'
+               print(('----------> found ', len(MAXTAB[0]), ' peaks'))
                # get the values above the V threshold
                tp = np.array(MAXTAB[0])
                Vp = np.array(MAXTAB[1])
                iw = np.where( Vp > self.par["ts_Vthreshold"] )[0]
-               print '----------> store ', len(iw), ' peaks above threshold'
+               print(('----------> store ', len(iw), ' peaks above threshold'))
                ts_counts.append(len(iw))
                ts_tp.append(tp[iw])
                ts_Vp.append(Vp[iw])
@@ -1219,7 +1219,7 @@ class PlotFrame(QtWidgets.QMainWindow):
 
      def OnTSplotrate(self):
           if (self.ts_av is None) or (self.ts_counts is None):
-               print "Nothing to plot !"
+               print("Nothing to plot !")
                return
           rate = self.ts_counts/self.par["ts_width"]
           rate_err = np.sqrt(self.ts_counts)/self.par["ts_width"]
@@ -1235,7 +1235,7 @@ class PlotFrame(QtWidgets.QMainWindow):
 
      def OnTSsaverate(self):
           if (self.ts_av is None) or (self.ts_counts is None):
-              print "Nothing to Save !"
+              print("Nothing to Save !")
               return
           # calculate rate
           rate = self.ts_counts/self.par["ts_width"]
@@ -1253,9 +1253,9 @@ class PlotFrame(QtWidgets.QMainWindow):
                # analyze the file name
                dir, fname = os.path.split(filename)
                name, ext = os.path.splitext(fname)
-               print "will save to : ", filename
+               print(("will save to : ", filename))
           else:
-               print "so, you changed your mind, I will do nothing"
+               print("so, you changed your mind, I will do nothing")
                filename = None
                return
           # write the rates into a data files
@@ -1270,7 +1270,7 @@ class PlotFrame(QtWidgets.QMainWindow):
          
      def OnTShistogram(self):
           if (self.ts_Vp is None):
-               print "Nothing to histogram !"
+               print("Nothing to histogram !")
                return
           # clear histos list
           self.histos = []
@@ -1286,11 +1286,11 @@ class PlotFrame(QtWidgets.QMainWindow):
                else:
                    continue
           # hisograms created
-          print "Time slice histograms completed, %d histograms added" %len(self.histos)
+          print(("Time slice histograms completed, %d histograms added" %len(self.histos)))
 
      def OnTSshowhistos(self):
           if self.histos == []:
-               print "No TS histos"
+               print("No TS histos")
                return
           # show ths histograms, start with the first one
           self.show_histos(0)
@@ -1298,20 +1298,20 @@ class PlotFrame(QtWidgets.QMainWindow):
      def OnShow_next_histo(self):
           n = self.current_histo + 1
           if n >= len(self.histos):
-               print "at the last histogram"
+               print("at the last histogram")
                n = len(self.histos)-1
           self.show_histos(n)
           
      def OnShow_prev_histo(self):
           n = self.current_histo - 1
           if n < 0:
-               print "at the first histogram"
+               print("at the first histogram")
                n = 0
           self.show_histos(n)
 
      def OnTSshowslice(self):
           if self.ts_av is None:
-               print "No slices"
+               print("No slices")
                return
           # show the histograms, start with the first one
           self.show_slice(0)
@@ -1319,14 +1319,14 @@ class PlotFrame(QtWidgets.QMainWindow):
      def OnShow_next_slice(self):
           n = self.current_slice + 1
           if n >= len(self.ts_av):
-               print "at the last slice"
+               print("at the last slice")
                n = len(self.ts_av)-1
           self.show_slice(n)
           
      def OnShow_prev_slice(self):
           n = self.current_slice - 1
           if n < 0:
-               print "at the first slice"
+               print("at the first slice")
                n = 0
           self.show_slice(n)
           
@@ -1335,26 +1335,26 @@ class PlotFrame(QtWidgets.QMainWindow):
      #---------------------------------------------------------------------
      def OnTSFFTcalc(self):
           if self.ts_av is None:
-               print "No slices"
-               print "No data, nothing to transform !"
+               print("No slices")
+               print("No data, nothing to transform !")
                return
           # calculate FFT and PS
           self.ts_FFT = []
           for i,V in enumerate(self.V_slice):
               t = self.t_slice[i]
  #             V = self.V_slice[i]
-              print "Calculate FFT for slice: ", i, " and ", len(t), " data points"
+              print(("Calculate FFT for slice: ", i, " and ", len(t), " data points"))
               ffts = FFT.FFT(t)   
               ffts.transform(self.V)
               ffts.get_ps()
               ffts.logp = np.log10(ffts.p)
               # self.ts_FFT.append(ffts)
-          print "all TS FFT completed" 
+          print("all TS FFT completed") 
 
      def OnTSFFTplotps(self,event):
           # plot power spectrum
           if not self.fft.ok:
-               print "No power spectrum to plot"
+               print("No power spectrum to plot")
                return
           if self.par["draw_lines"]:
                self.axes.plot(self.fft.f,self.fft.logp)
@@ -1371,21 +1371,21 @@ class PlotFrame(QtWidgets.QMainWindow):
      # Parameter routines
      #----------------------------------------------------------------------
      def OnSelectChannel(self):
-	  # show and change parameters
-	  # parameter keys
-	  pkeys=['Detector channel']
-	  data = {pkeys[0]:"%d"%(int(self.par["Detector channel"]))}
+          # show and change parameters
+          # parameter keys
+          pkeys=['Detector channel']
+          data = {pkeys[0]:"%d"%(int(self.par["Detector channel"]))}
           pdlg = NumberDialog(data, self, title="Detector channel", \
                               labels = pkeys, \
-                              keys = pkeys, \
-                              about_txt = "Select the data channel")
+                                  keys = pkeys, \
+                                      about_txt = "Select the data channel")
           pdlg.exec_()
           # now set the new parameters
           self.par['Detector channel']=int(pdlg.data[pkeys[0]])
           pdlg.destroy()
           
           self.OnReload()
-          #self.OnPlot()
+          self.OnPlot()
 
      def OnSelectTimeSlot(self):
           # show and change the parameters
@@ -1484,10 +1484,10 @@ class PlotFrame(QtWidgets.QMainWindow):
      #----------------------------------------------------------------------
      def OnFFTcalc(self):
           if (self.t is None) or (self.V is None):
-               print "No data, nothing to transform !"
+               print("No data, nothing to transform !")
                return
           # calculate FFT and PS
-          print "Calculate FFT for : ", len(self.t), " data points"
+          print(("Calculate FFT for : ", len(self.t), " data points"))
           self.fft = FFT.FFT(self.t)
           self.fft.transform(self.V)
           self.fft.get_ps()
@@ -1496,7 +1496,7 @@ class PlotFrame(QtWidgets.QMainWindow):
      def OnFFTplotps(self):
           # plot power spectrum
           if not self.fft.ok:
-               print "No power spectrum to plot"
+               print("No power spectrum to plot")
                return
           if self.par["draw_lines"]:
                self.axes.plot(self.fft.f,self.fft.logp)
@@ -1511,7 +1511,7 @@ class PlotFrame(QtWidgets.QMainWindow):
      def OnFFTplotan(self):
           # plot sin coeff
           if not self.fft.ok:
-               print "No power spectrum to plot"
+               print("No power spectrum to plot")
                return
           if self.par["draw_lines"]:
                self.axes.plot(self.fft.f,np.abs(self.fft.an))
@@ -1525,7 +1525,7 @@ class PlotFrame(QtWidgets.QMainWindow):
      def OnFFTplotbn(self):
           # plot cos coeff
           if not self.fft.ok:
-               print "No power spectrum to plot"
+               print("No power spectrum to plot")
                return
           if self.par["draw_lines"]:
                self.axes.plot(self.fft.f,np.abs(self.fft.bn))
@@ -1539,7 +1539,7 @@ class PlotFrame(QtWidgets.QMainWindow):
      def OnSetFFTfilterpar(self):
           # show and change the parameters
           if not self.fft.ok:
-               print "No FFT"
+               print("No FFT")
                return
           # parameter keys
           pkeys=['f min', 'f max', 'alpha ', 'r - threshold']
@@ -1564,7 +1564,7 @@ class PlotFrame(QtWidgets.QMainWindow):
      def OnFFTcutfilter(self):
           # Apply freq. cut to FFT
           if not self.fft.ok:
-               print "No FFT"
+               print("No FFT")
                return
           self.fft.an_cut_freq(replace = True)
           self.fft.bn_cut_freq(replace = True)
@@ -1575,7 +1575,7 @@ class PlotFrame(QtWidgets.QMainWindow):
      def OnFFTrfilter(self):
           # Apply r-cut to FFT
           if not self.fft.ok:
-               print "No FFT"
+               print("No FFT")
                return
           self.fft.r_cut_freq(replace = True)
           self.fft.store_fft_coeff(self.fft.an, self.fft.bn)
@@ -1583,12 +1583,12 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.fft.logp = np.log10(self.fft.p)
      
      def OnFFTinvert(self):
-          print "Invert FFT"
+          print("Invert FFT")
           if not self.fft.ok:
-               print "No FFT"
+               print("No FFT")
                return
           self.Vinv = self.fft.inv_transform()
-          print "FFT inverted"
+          print("FFT inverted")
      #----------------------------------------------------------------------
      # options routines
      #----------------------------------------------------------------------
@@ -1598,36 +1598,36 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.RS.set_active(True)
           self.par["measure"] = True
           self.par["limits"] = False
-          print "limits = ", self.par["limits"], " measure = ", self.par["measure"]
+          print(("limits = ", self.par["limits"], " measure = ", self.par["measure"]))
 
      def OnLimits(self):
           # to measure create a Selector
           self.RS.set_active(True)
           self.par["measure"] = False
           self.par["limits"] = True
-          print "limits = ", self.par["limits"], " measure = ", self.par["measure"]
+          print(("limits = ", self.par["limits"], " measure = ", self.par["measure"]))
 
      def OnTogglelimits(self):
           self.par["use_limits"] = not self.par["use_limits"]
-          print "use limits = ", self.par["use_limits"]
+          print(("use limits = ", self.par["use_limits"]))
 
      def OnToggleHistolimits(self,event):
           self.par["auto_histo"] = not self.par["auto_histo"]
-          print "auto histo = ", self.par["auto_histo"]
+          print(("auto histo = ", self.par["auto_histo"]))
 
      def OnToggleLines(self, event):
           self.par["draw_lines"] = not self.par["draw_lines"]
-          print "draw Lines = ", self.par["draw_lines"]
+          print(("draw Lines = ", self.par["draw_lines"]))
           try:
               self.toolbar.thinning()
           except:
               'Thinning did not work'
      def OnUsefiltered(self, event):
           self.par["filtered"] = not self.par["filtered"]
-          print "use filtered = ", self.par["filtered"]
+          print(("use filtered = ", self.par["filtered"]))
           
      def OnNothing(self):
-          print "do nothing"
+          print("do nothing")
 
 #----------------------------------------------------------------------
 # main program
@@ -1639,7 +1639,7 @@ def RatesForAlS(app, chnum):
          fobj.OnTScalc()
          fobj.OnTSfindpeaks()
          if (fobj.ts_av is None) or (fobj.ts_counts is None):
-               print "Nothing to plot !"
+               print("Nothing to plot !")
                return
          rate = fobj.ts_counts/fobj.par["ts_width"]
          rate_err = np.sqrt(fobj.ts_counts)/fobj.par["ts_width"]

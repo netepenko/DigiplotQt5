@@ -42,7 +42,7 @@ class NavigationToolbar(NavigationToolbar2QT):
           self.axes.set_autoscaley_on(True)
           self.thinning()
       except:
-          print "Thinnning didn't work properly."
+          print("Thinnning didn't work properly.")
           
     def back(self, *args):
         NavigationToolbar2QT.back(self, *args)
@@ -172,9 +172,9 @@ class NumberDialog(QtWidgets.QDialog):
           self.layout.addWidget(cancel, nrow+2, 1)
      def getStart(self):
          xst=self.parent.axes.get_xlim()[0]
-         print 'opa'
+         print('opa')
          self.qle['t start'].setText(str(xst))
-         print 'zhopa'
+         print('zhopa')
      def getStop(self):
          xtp=self.parent.axes.get_xlim()[1]
          self.qle['t stop'].setText(str(xtp))

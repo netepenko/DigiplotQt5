@@ -27,7 +27,7 @@ def find_peaks(yval, ystep, xval = None, \
      MAXTAB=[]
      MINTAB=[]
      if ((xmin == None) and (xmax == None)) or (not limits) or (get_window == None):
-          print "No limits present, analyze all data"
+          print("No limits present, analyze all data")
           results = np.zeros((2,), dtype = 'int32')
           pmin = np.zeros((len(yval)/5, ), dtype='int32')
           pmax = np.zeros((len(yval)/5, ), dtype='int32')
@@ -40,7 +40,7 @@ def find_peaks(yval, ystep, xval = None, \
           nmax = results[1]
      else:
           # get the window
-          print "Analyze data between ", xmin, " and ", xmax
+          print("Analyze data between ", xmin, " and ", xmax)
           sl = get_window( xmin, xval, xmax)
           # progress dialog
           results = np.zeros((2,), dtype = 'int32')
@@ -49,7 +49,7 @@ def find_peaks(yval, ystep, xval = None, \
           try:
               R = FP.find_peaks(len(yval[sl]), ystep, yval[sl], results, pmin, pmax)
           except:
-               print "problem with peak finding"
+               print("problem with peak finding")
                return []
           nmin = results[0]
           nmax = results[1]

@@ -1,0 +1,1 @@
+python ./Digiplot_Qt5.py

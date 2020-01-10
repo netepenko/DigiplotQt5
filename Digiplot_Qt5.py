@@ -9,20 +9,19 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import h5py
 import sys
 import os
-#import time
 import numpy as np
-# general LabTools
 import LT.box
 from LT.parameterfile import pfile
 # FFT
 import FFT
 #Navigation toolbar and number dialog
 from NavToolBar_NumberDial import NavigationToolbar, NumberDialog
+import ffind_peaks as FP
+import itertools
 
 convert_int = True
 colors = ['red', 'green', 'blue', 'magenta', 'cyan', 'orange',
           'lavenderblush', 'maroon', 'plum']
-import ffind_peaks as FP
 
 #----------------------------------------------------------------------
 # useful functions
@@ -463,7 +462,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.figure_canvas = FigureCanvas(self.figure)
           self.figure_canvas.mpl_connect('motion_notify_event', self.UpdateStatusBar)
           self.figure_canvas.mpl_connect('figure_enter_event', self.ChangeCursor)
-          
+          self.setCentralWidget(self.figure_canvas)
           self.all_plot=[]
          
           
@@ -473,6 +472,9 @@ class PlotFrame(QtWidgets.QMainWindow):
           
           # add ToolBar
           self.toolbar = NavigationToolbar(self.figure_canvas, self)
+          self.toolbar.colors=colors
+          self.toolbar.markers=itertools.cycle(['.','*'])
+          self.toolbar.mker=next(self.toolbar.markers)
           self.addToolBar(self.toolbar)
           
           
@@ -747,7 +749,7 @@ class PlotFrame(QtWidgets.QMainWindow):
          chan_num = "%0d"%(int(self.par["Detector channel"]))
          self.stBar1.setText('Current file : %s / Channel : %s'%(self.name+self.ext, chan_num))
          # open file
-         print(("Open file : ",self.dir + self.name + self.ext))
+         print("Open file : ",self.dir + self.name + self.ext)
          self.f = h5py.File(self.dir + self.name + self.ext, 'r')
          # get the data
          # time information
@@ -844,12 +846,12 @@ class PlotFrame(QtWidgets.QMainWindow):
                               item_dict[key] = item
           # set the values for the options menu
           if item_dict != {}:
-               item_dict["SetLimits"].setChecked(self.par["limits"]); print(("SetLimits = ", self.par["limits"]))
-               item_dict["Measure"].setChecked(self.par["measure"]); print(("Measure = ", self.par["measure"]))
-               item_dict["Use Limits"].setChecked(self.par["use_limits"]); print(("Use Limits = ",self.par["use_limits"]))
-               item_dict["Auto Histogram Limits"].setChecked(self.par["auto_histo"]); print(("Auto Histogram Limits = ", self.par["auto_histo"]))
-               item_dict["Filtered"].setChecked(self.par["filtered"]); print(("Filtered = ", self.par["filtered"]))
-               item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print(("draw_lines = ", self.par["draw_lines"]))
+               item_dict["SetLimits"].setChecked(self.par["limits"]); print("SetLimits = ", self.par["limits"])
+               item_dict["Measure"].setChecked(self.par["measure"]); print("Measure = ", self.par["measure"])
+               item_dict["Use Limits"].setChecked(self.par["use_limits"]); print("Use Limits = ",self.par["use_limits"])
+               item_dict["Auto Histogram Limits"].setChecked(self.par["auto_histo"]); print("Auto Histogram Limits = ", self.par["auto_histo"])
+               item_dict["Filtered"].setChecked(self.par["filtered"]); print("Filtered = ", self.par["filtered"])
+               item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print("draw_lines = ", self.par["draw_lines"])
           self.select_data()
           # all done
           
@@ -974,12 +976,17 @@ class PlotFrame(QtWidgets.QMainWindow):
                     print("cannot destroy tsplotframe !")
           
           self.destroy()
+          QtCore.QCoreApplication.instance().exit()
           # all done
+     def closeEvent(self, event):
+         self.OnCloseWindow()
+
      #----------------------------------------------------------------------
      # Action menu routines   
      #----------------------------------------------------------------------
      def OnPlot(self):
-          self.setCentralWidget(self.figure_canvas)
+          if (self.par['Detector channel'] in self.toolbar.ch_n) and (self.name[-6:] in self.toolbar.fn):
+              return
           V = None
           if self.par["filtered"]:
                V = self.Vinv
@@ -1004,7 +1011,12 @@ class PlotFrame(QtWidgets.QMainWindow):
                                       minspanx=5, minspany=5,
                                       spancoords='pixels')
           self.figure_canvas.draw()
-
+          self.toolbar.ch_n=[]
+          self.toolbar.t=[]
+          self.toolbar.V=[]
+          self.toolbar.fn=[]
+          self.toolbar.markers=itertools.cycle(['.','*'])
+          self.toolbar.mker=next(self.toolbar.markers)
      def OnFindPeaks(self):
           if (self.t is None) or (self.V is None):
                print("No data, nothing to find !")
@@ -1035,7 +1047,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                self.par["Vhmax"] = self.V_peak.max()
           
           self.axes.set_autoscaley_on(True)
-          self.axes.plot(self.t_peak,self.V_peak, '.', color=colors[self.par['Detector channel']])
+          self.axes.plot(self.t_peak,self.V_peak, self.toolbar.mker , color=colors[self.par['Detector channel']])
           self.figure_canvas.draw()
 
      def OnHistogram(self):
@@ -1226,11 +1238,14 @@ class PlotFrame(QtWidgets.QMainWindow):
           
           f1=pl.figure()
           pl.title('Rate')
-          f1.axes[0].errorbar(self.ts_av, rate, yerr = rate_err, marker='o', ls = 'None')
+          f1.axes[0].ticklabel_format(axis='y', style='sci', scilimits=(0,0))
+          f1.axes[0].errorbar(self.ts_av, rate, linestyle='-', marker='.', capsize = 0., color=colors[self.par['Detector channel']])
+          f1.axes[0].fill_between(self.ts_av, rate-rate_err, rate+rate_err, alpha=0.3, color=colors[self.par['Detector channel']])
           f1.axes[0].set_xlabel('t [s]')
           f1.axes[0].set_ylabel('Rate [Hz]')
           f1.draw()
-         
+          
+          # pl.locator_params(axis='x', nbins=30)
 
 
      def OnTSsaverate(self):
@@ -1385,7 +1400,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           pdlg.destroy()
           
           self.OnReload()
-          self.OnPlot()
+          #self.OnPlot()
 
      def OnSelectTimeSlot(self):
           # show and change the parameters
@@ -1648,16 +1663,15 @@ def RatesForAlS(app, chnum):
          
 if __name__ == '__main__':
     #Create App
+    
     app = QtCore.QCoreApplication.instance()
     
     if app is None:
         app = QtWidgets.QApplication(sys.argv)
     
     #Create PlotFrame in App
-    frame = PlotFrame(app)
-    #frame.LoadParameters('C:/Users/Alex/Desktop/test_data/params.data')
-    #RatesForAlS(app, 0)
+    frame = PlotFrame(app) 
+    
     sys.exit(app.exec_())
-    #Test change
      
      

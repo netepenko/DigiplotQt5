@@ -7,8 +7,8 @@ Created on Sat Mar 09 16:14:31 2019
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT
 from PyQt5 import QtWidgets, QtCore, QtGui
 import numpy as np
-colors = ['red', 'green', 'blue', 'magenta', 'cyan', 'orange',
-          'lavenderblush', 'maroon', 'plum']
+
+
 class NavigationToolbar(NavigationToolbar2QT):
     def __init__(self, canvas, parent, coordinates=True):
         NavigationToolbar2QT.__init__(self, canvas, parent, coordinates=True)
@@ -31,7 +31,6 @@ class NavigationToolbar(NavigationToolbar2QT):
         self.addWidget(self.Nlabel)
         self.addWidget(self.Ncontrol)
         self.addWidget(self.refr)
-    
     # to remove matplotlib toolbar status line
     def set_message(self, msg):
         pass
@@ -62,14 +61,13 @@ class NavigationToolbar(NavigationToolbar2QT):
         
     def release_zoom(self, event):
         NavigationToolbar2QT.release_zoom(self, event)
-        self.thinning()     
+        self.thinning()    
         
     #rescale and replot
     # this function drops unnecessary ponts in ploting region to reduce
     # plotting delays, but keeps everything above threshold to see peaks
     def thinning(self):
         all_plot_new=[]
-        col_sh = 0 #color shift
         self.axes=self.parent.axes
         ax=self.axes
         (xmin, xmax)=ax.get_xlim()
@@ -77,7 +75,8 @@ class NavigationToolbar(NavigationToolbar2QT):
         rng=xmax-xmin
         Vc=np.array([])
         for i in range(len(self.t)):
-            if i>0 and self.fn[i]!=self.fn[i-1]: col_sh=4
+            
+            if i>0 and self.fn[i]!=self.fn[i-1]: self.mker=next(self.markers)
             t=self.t[i]
             V=self.V[i]
     #        if (xmin- 1*rng)<t[0] or (xmax+1*rng)>t[-1]:
@@ -100,9 +99,9 @@ class NavigationToolbar(NavigationToolbar2QT):
                 ax.set_xlim(max(tcut[0] -1e-6, xmin), min(tcut[-1] + 1e-6, xmax))
             ax.autoscale(enable=False, axis='x', tight=False)
             if self.parent.par['draw_lines']:
-                all_plot_new.append(ax.plot(tcut,Vcut, '.-',  label='%s Ch %d'%(self.fn[i],self.ch_n[i]), alpha=0.5, color=colors[self.ch_n[i]+col_sh])[0])
+                all_plot_new.append(ax.plot(tcut,Vcut, self.mker + '-',  label='%s Ch %d'%(self.fn[i],self.ch_n[i]), alpha=0.5, color=self.colors[self.ch_n[i]])[0])
             else:
-                all_plot_new.append(ax.plot(tcut,Vcut, '.', label='%s Ch %d'%(self.fn[i],self.ch_n[i]), alpha=0.5, color=colors[self.ch_n[i]+col_sh])[0])
+                all_plot_new.append(ax.plot(tcut,Vcut, self.mker, label='%s Ch %d'%(self.fn[i],self.ch_n[i]), alpha=0.5, color=self.colors[self.ch_n[i]])[0])
             Vc=np.concatenate((Vc,Vcut[np.where((xmin < tcut) & (tcut < xmax))]))
        
         Vcmin=Vc.min()
@@ -172,9 +171,7 @@ class NumberDialog(QtWidgets.QDialog):
           self.layout.addWidget(cancel, nrow+2, 1)
      def getStart(self):
          xst=self.parent.axes.get_xlim()[0]
-         print('opa')
          self.qle['t start'].setText(str(xst))
-         print('zhopa')
      def getStop(self):
          xtp=self.parent.axes.get_xlim()[1]
          self.qle['t stop'].setText(str(xtp))

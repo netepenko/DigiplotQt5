@@ -2,7 +2,6 @@
 
 import scipy.fftpack as FFTP
 import numpy as np
-import pdb
 
 def get_window(xmin, x, xmax):
      # get the slice corresponding to xmin and xmax in x
@@ -43,7 +42,7 @@ class FFT:
           self.N = 2* int( len(t)/2.)
           # find the time interval
           self.T = t[self.N-1] - t[0]
-          self.f = np.arange(0, self.N/2)/self.T
+          self.f = np.arange(0, self.N//2)/self.T
           self.par["xmin"] = self.f[0]
           self.par["xmax"] = self.f[-1]
           self.ok = False
@@ -54,9 +53,9 @@ class FFT:
           self.cn = FFTP.fft(V[:self.N])
           self.an0 = self.cn[0]
           # sin coefs
-          self.an = -2./self.N*np.imag(self.cn[0:self.N/2])
+          self.an = -2./self.N*np.imag(self.cn[0:self.N//2])
           # cos coefs
-          self.bn = 2./self.N*np.real(self.cn[self.N/2:])
+          self.bn = 2./self.N*np.real(self.cn[self.N//2:])
           # reverse bn for future work and to aplly cuts
           self.bnr = self.bn[::-1]
           self.rr = np.sqrt(self.an**2 + self.bnr**2)
@@ -64,8 +63,8 @@ class FFT:
         
      def get_ps(self):
           # get power spectrum
-          pt = np.abs( self.cn )/ (self.N / 2.) 
-          self.p = (pt[0:self.N/2]**2).clip(minval, maxval)
+          pt = np.abs( self.cn )/ (self.N // 2.) 
+          self.p = (pt[0:self.N//2]**2).clip(minval, maxval)
           self.ok = True
           print("Power spectrum completed")
           
@@ -138,8 +137,8 @@ class FFT:
           bnr = np.hstack( (bn[0], bn[1:][::-1]) ) # reverse array
           anr = np.hstack( (an[:1],an[1:][::-1]) ) # reverse array
           # construct new fft coeff
-          z1 = (bnr - an*1j)*N/2.
-          z2 = (bn + anr*1j)*N/2.
+          z1 = (bnr - an*1j)*N//2.
+          z2 = (bn + anr*1j)*N//2.
           z1[0] = const
           cn = np.hstack( (z1, z2) )
           if replace:

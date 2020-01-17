@@ -66,8 +66,8 @@ def find_peaks(yval, ystep, xval = None, \
           sl = get_window( xmin, xval, xmax)
           # progress dialog
           results = np.zeros((2,), dtype = 'int32')
-          pmin = np.zeros((len(yval[sl])/5, ), dtype='int32')
-          pmax = np.zeros((len(yval[sl])/5, ), dtype='int32')
+          pmin = np.zeros((len(yval[sl])//5, ), dtype='int32')
+          pmax = np.zeros((len(yval[sl])//5, ), dtype='int32')
           try:
               FP.find_peaks(len(yval[sl]), ystep, yval[sl], results, pmin, pmax)
           except:
@@ -1034,12 +1034,12 @@ class PlotFrame(QtWidgets.QMainWindow):
                                                  limits = self.par["use_limits"], \
                                                  get_window = get_window, \
                                                  power = 5)
-          print(('----------> found ', len(self.MAXTAB[0]), ' peaks'))
+          print('----------> found ', len(self.MAXTAB[0]), ' peaks')
           # get the values above the V threshold
           tp = np.array(self.MAXTAB[0])
           Vp = np.array(self.MAXTAB[1])
           iw = np.where( Vp > self.par["Vthreshold"] )[0]
-          print(('----------> store ', len(iw), ' peaks above threshold'))
+          print('----------> store ', len(iw), ' peaks above threshold')
           self.t_peak = tp[iw]
           self.V_peak = Vp[iw]
           if self.par["auto_histo"] and not len(iw) == 0:
@@ -1077,6 +1077,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                self.histoframe.figure.clf()
                self.histoframe.axes = self.histoframe.figure.add_subplot(111)
                self.histoframe.figure_canvas.draw()
+               print ('All histograms have been deleted')
 
      def OnSaveHistos(self):
           if self.histos == []:

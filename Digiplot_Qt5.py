@@ -1,7 +1,9 @@
+# reading and analyzing digitizer plots
+#
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT
 from matplotlib.widgets import RectangleSelector
-import matplotlib.pyplot as pl 
+import matplotlib.pyplot as pl
 from matplotlib.figure import Figure
 # for GUI stuff
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -9,34 +11,32 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import h5py
 import sys
 import os
+import os.path
+import time
 import numpy as np
+# general LabTools
 import LT.box
 from LT.parameterfile import pfile
 # FFT
 import FFT
-#Navigation toolbar and number dialog
-from NavToolBar_NumberDial import NavigationToolbar, NumberDialog
-import ffind_peaks as FP
-import itertools
 
-convert_int = True
-colors = ['red', 'green', 'blue', 'magenta', 'cyan', 'orange',
-          'lavenderblush', 'maroon', 'plum']
+
+import ffind_peaks as FP
 
 #----------------------------------------------------------------------
 # useful functions
 #----------------------------------------------------------------------
 
-         
+
 def get_window(xmin, x, xmax):
      # get the slice corresponding to xmin and xmax in x
-     # the x-values need to be equally spaced
+     # the x-values need to equally spaced
      dx = x[1] - x[0]
      nmin = max( 0, int( (xmin - x[0])/dx ))
      nmax = min( (int( (xmax - x[0])/dx ) + 1), len(x) -1 )
      return slice(nmin, nmax + 1)
-     
-     
+
+
 def find_peaks(yval, ystep, xval = None, \
                xmin = None, xmax = None, limits = None, \
                power = 5,\
@@ -51,8 +51,8 @@ def find_peaks(yval, ystep, xval = None, \
      if ((xmin == None) and (xmax == None)) or (not limits) or (get_window == None):
           print("No limits present, analyze all data")
           results = np.zeros((2,), dtype = 'int32')
-          pmin = np.zeros((len(yval)//5, ), dtype='int32')
-          pmax = np.zeros((len(yval)//5, ), dtype='int32')
+          pmin = np.zeros(int(len(yval)/5, ), dtype='int32')
+          pmax = np.zeros(int(len(yval)/5, ), dtype='int32')
           try:
               FP.find_peaks(len(yval), ystep, yval, results, pmin, pmax)
           except:
@@ -66,8 +66,8 @@ def find_peaks(yval, ystep, xval = None, \
           sl = get_window( xmin, xval, xmax)
           # progress dialog
           results = np.zeros((2,), dtype = 'int32')
-          pmin = np.zeros((len(yval[sl])//5, ), dtype='int32')
-          pmax = np.zeros((len(yval[sl])//5, ), dtype='int32')
+          pmin = np.zeros(int(len(yval[sl])/5, ), dtype='int32')
+          pmax = np.zeros(int(len(yval[sl])/5, ), dtype='int32')
           try:
               FP.find_peaks(len(yval[sl]), ystep, yval[sl], results, pmin, pmax)
           except:
@@ -82,10 +82,177 @@ def find_peaks(yval, ystep, xval = None, \
      MINTAB.append( yval[pmin[:nmin]] )
      MINTAB.append(pmin[:nmin])
      return [MAXTAB,MINTAB]
-     
+
+#----------------------------------------------------------------------
+# dialog to enter numerical data, using a validator
+#----------------------------------------------------------------------
+
+# veryfies that a number has been entered
+class NavigationToolbar(NavigationToolbar2QT):
+    def __init__(self, canvas, parent, coordinates=True):
+        NavigationToolbar2QT.__init__(self, canvas, parent, coordinates=True)
+        self.rescale_data = None
+        self.N = 1000
+
+        self.Ncontrol= QtWidgets.QLineEdit(self)
+        self.Ncontrol.setValidator(QtGui.QIntValidator(self.Ncontrol))
+        self.Ncontrol.setFixedWidth(50)
+        self.Ncontrol.setText(str(self.N))
+
+        self.refr=QtWidgets.QPushButton(QtGui.QIcon('refresh.png'), None, self)
+
+        self.refr.clicked.connect(self.getN)
+
+        #self.Ncontrol.textChanged.connect(self.getN)
+
+        self.Nlabel=QtWidgets.QLabel('Data points on Fig, N=', self)
+
+
+        self.Ncact=self.addWidget(self.Nlabel)
+        self.Nlact=self.addWidget(self.Ncontrol)
+        self.Nrefr=self.addWidget(self.refr)
+
+    # to remove matplotlib toolbar status line
+    def set_message(self, msg):
+        pass
+
+    def getN(self):
+      self.N = int(self.Ncontrol.text())
+      try:
+          self.plot_rescaled()
+      except:
+          print('No plot yet to rescale')
+    def back(self, *args):
+        NavigationToolbar2QT.back(self, *args)
+        self.plot_rescaled()
+
+    def forward(self, *args):
+        NavigationToolbar2QT.forward(self, *args)
+        self.plot_rescaled()
+
+    def release_pan(self, event):
+        NavigationToolbar2QT.release_pan(self, event)
+        self.plot_rescaled()
+
+    def home(self, *args):
+        NavigationToolbar2QT.home(self, *args)
+        self.plot_rescaled()
+
+    def release_zoom(self, event):
+        NavigationToolbar2QT.release_zoom(self, event)
+        self.plot_rescaled()
+
+    #rescale and replot
+    def plot_rescaled(self):
+        # get the parent window
+        parent = self.canvas.parent()
+        #
+        if self.rescale_data is None:
+            # No data to plot
+            return
+        t=self.rescale_data[0]
+        V=self.rescale_data[1]
+        # get the axes of the parent window
+        ax=parent.axes
+        (xmin, xmax)=ax.get_xlim()
+        rng=xmax-xmin
+        #get original data which is in plotting region
+        org_points=np.where(((xmin - 2*rng) < t) & (t < (xmax + 2*rng)))
+        if (xmin- 2*rng)<t[0] or (xmax+2*rng)>t[-1]:
+            k= (-max(xmin-2*rng, t[0])+min(t[-1], xmax+2*rng))/(xmax-xmin)
+        else: k=5
+        to=t[org_points]
+        Vo=V[org_points]
+        n=1 #take every nth point from data
+        if len(to)/k> self.N:
+            n=int(len(to)/k/self.N)
+        tcut=to[::n]
+        Vcut=Vo[::n]
+
+        ax.set_prop_cycle(None)
+        ax.lines.remove(parent.all_plot[0])
+        ax.autoscale(enable=False, axis='x', tight=True)
+        ax.set_autoscaley_on(False)
+        if parent.par['draw_lines']:
+            parent.all_plot=ax.plot(tcut,Vcut, zorder=0)
+        else:
+            parent.all_plot=ax.plot(tcut,Vcut, '.', zorder=0)
+        ax.figure.canvas.draw()
 
 
 
+class NumberDialog(QtWidgets.QDialog):
+     def __init__(self, data, parent = None, title = 'Enter parameters', labels=['First Label','Second Label'],
+                  keys=['first','second'], about_txt = 'about_txt'):
+
+          self.parent=parent
+          self.keys=keys
+          self.data=data
+          QtWidgets.QDialog.__init__(self, parent)
+          self.setWindowFlags(self.windowFlags() ^ QtCore.Qt.WindowContextHelpButtonHint)
+          self.setWindowTitle(title)
+          self.layout=QtWidgets.QGridLayout(self)
+          about = QtWidgets.QLabel(about_txt, self)
+          ok=QtWidgets.QPushButton('Ok', self)
+          ok.setDefault(True)
+          cancel=QtWidgets.QPushButton('Cancel', self)
+          ok.clicked.connect(self.OnOk)
+          cancel.clicked.connect(self.OnCancel)
+          sepline=QtWidgets.QFrame()
+          sepline.setFrameShape(QtWidgets.QFrame.HLine)
+          sepline.setFrameShadow(QtWidgets.QFrame.Sunken)
+
+          self.layout.addWidget(about, 0, 0)
+          self.layout.addWidget(sepline, 1, 0, 1, 2)
+
+
+          # loop over keys to add controls and validators
+          nrow = len(keys)+1
+          #qle - qlinedit dictionary to retrieve data later
+          self.qle={}
+          for i, key in enumerate(keys):
+               Val_l  = QtWidgets.QLabel(labels[i], self)
+               Val_t  = QtWidgets.QLineEdit(self)
+               Val_t.setValidator(QtGui.QDoubleValidator(self))
+
+               Val_t.textChanged.connect(self.check_state)
+               Val_t.setText(data.get(key))
+               self.layout.addWidget(Val_l, i+2, 0)
+               self.layout.addWidget(Val_t, i+2, 1)
+
+               self.qle[key]=Val_t
+
+          self.layout.addWidget(ok, nrow+2, 0)
+          self.layout.addWidget(cancel, nrow+2, 1)
+
+     def check_state(self, *args, **kwargs):
+
+        sender = self.sender()
+        validator = sender.validator()
+        state = validator.validate(sender.text(), 0)[0]
+        if state == QtGui.QValidator.Acceptable:
+            color = '#c4df9b' # green
+        elif state == QtGui.QValidator.Intermediate:
+            color = '#fff79a' # yellow
+        else:
+            color = '#f6989d' # red
+        sender.setStyleSheet('QLineEdit { background-color: %s }' % color)
+
+     def OnOk(self):
+         for i, key in enumerate(self.keys):
+             try:
+                 self.data[key]=self.qle[key].text()
+             except:
+                 mb=QtWidgets.QMessageBox(self)
+                 mb.setWindowTitle('Entry error')
+                 mb.setText("Please enter the missing parameter")
+                 mb.exec_()
+                 self.qle[key].setFocus()
+                 return
+         self.close()
+
+     def OnCancel(self):
+         self.destroy()
 
 
 
@@ -103,7 +270,7 @@ class HistoPlotFrame(QtWidgets.QMainWindow):
           #Change background color
           self.palette=QtGui.QPalette()
           self.palette.setColor(QtGui.QPalette.Background,QtCore.Qt.white)
-          
+
           # create status bar
           self.stBar1 = QtWidgets.QLabel('Current histogram')
           self.stBar1.setFrameStyle(2)
@@ -111,54 +278,54 @@ class HistoPlotFrame(QtWidgets.QMainWindow):
           self.stBar2 = QtWidgets.QLabel('No plot yet')
           self.stBar2.setFrameStyle(2)
           self.stBar2.setFrameShadow(48)
-          
+
           self.statusBar().addWidget(self.stBar1, 1)
           self.statusBar().addWidget(self.stBar2, 1)
-          
-          
+
+
           # setup figure
           self.figure = Figure(figsize=(10,6))
           self.axes = self.figure.add_subplot(111)
           self.figure_canvas = FigureCanvas(self.figure)
-          
+
           # put figure cancas in center of Main Window
           self.setCentralWidget(self.figure_canvas)
-          
-          
+
+
           # Note that event is a MplEvent
           self.figure_canvas.mpl_connect('motion_notify_event', self.UpdateStatusBar)
           self.figure_canvas.mpl_connect('figure_enter_event', self.ChangeCursor)
           #
-          
+
           # add ToolBar
-          self.toolbar = NavigationToolbar2QT(self.figure_canvas, self)
-#          self.toolbar.removeAction(self.toolbar.Ncontrol)
-#          self.toolbar.removeAction(self.toolbar.Nlabel)
-#          self.toolbar.removeAction(self.toolbar.refr)
+          self.toolbar = NavigationToolbar(self.figure_canvas, self)
+          self.toolbar.removeAction(self.toolbar.Ncact)
+          self.toolbar.removeAction(self.toolbar.Nlact)
+          self.toolbar.removeAction(self.toolbar.Nrefr)
           self.addToolBar(self.toolbar)
-          
-          
+
+
           self.setPalette(self.palette)
           geo=self.parent.geometry()
           geo.adjust(20,20,20,20)
           self.setGeometry(geo)
-          
+
           # add tools for histogram selection
           self.hist_back=QtWidgets.QAction(QtGui.QIcon("l_arrow.png"),'Previous histogram', self)
           self.toolbar.addAction(self.hist_back)
           self.hist_back.triggered.connect(self.OnPrevhisto)
-          
+
           self.hist_forward=QtWidgets.QAction(QtGui.QIcon("r_arrow.png"),'Next histogram', self)
           self.toolbar.addAction(self.hist_forward)
           self.hist_forward.triggered.connect(self.OnNexthisto)
-          
+
           self.show()
 
      def UpdateStatusBar(self, event):
           if event.inaxes:
                x, y = event.xdata, event.ydata
                self.stBar2.setText( "x= " + "%e"%(x) + "  Counts= " + "%e"%(y))
-    
+
      def ChangeCursor(self, event):
           self.figure_canvas.setCursor(QtGui.QCursor(QtCore.Qt.CrossCursor))
 
@@ -167,7 +334,7 @@ class HistoPlotFrame(QtWidgets.QMainWindow):
                print("Prev button clicked !")
           else:
                self.callback.OnShow_prev_histo()
-               
+
 
      def OnNexthisto(self):
           if self.callback == None:
@@ -176,7 +343,7 @@ class HistoPlotFrame(QtWidgets.QMainWindow):
                self.callback.OnShow_next_histo()
 
      def closeEvent(self, Event):
-          
+
           print("Close histo frame")
           self.callback.histoframe=None
           self.destroy()
@@ -194,7 +361,7 @@ class TSPlotFrame(QtWidgets.QMainWindow):
           #Change background color
           self.palette=QtGui.QPalette()
           self.palette.setColor(QtGui.QPalette.Background,QtCore.Qt.white)
-          
+
           # create status bar
           self.stBar1 = QtWidgets.QLabel('Current slice')
           self.stBar1.setFrameStyle(2)
@@ -202,18 +369,18 @@ class TSPlotFrame(QtWidgets.QMainWindow):
           self.stBar2 = QtWidgets.QLabel('No plot yet')
           self.stBar2.setFrameStyle(2)
           self.stBar2.setFrameShadow(48)
-          
+
           self.statusBar().addWidget(self.stBar1, 1)
           self.statusBar().addWidget(self.stBar2, 1)
-          
+
           # setup figure
           self.figure = Figure(figsize=(10,6))
           self.axes = self.figure.add_subplot(111)
           self.figure_canvas = FigureCanvas(self.figure)
-          
+
           # put figure cancas in center of Main Window
           self.setCentralWidget(self.figure_canvas)
-          
+
           # Note that event is a MplEvent
           self.figure_canvas.mpl_connect('motion_notify_event', self.UpdateStatusBar)
           self.figure_canvas.mpl_connect('figure_enter_event', self.ChangeCursor)
@@ -221,40 +388,40 @@ class TSPlotFrame(QtWidgets.QMainWindow):
           # add ToolBar
           self.toolbar = NavigationToolbar(self.figure_canvas, self)
           self.addToolBar(self.toolbar)
-          
+
           self.setPalette(self.palette)
           geo=self.parent.geometry()
           geo.adjust(20,20,20,20)
           self.setGeometry(geo)
-          
+
           # add tools for histogram selection
           self.hist_back=QtWidgets.QAction(QtGui.QIcon("l_arrow.png"),'Previous slice', self)
           self.toolbar.addAction(self.hist_back)
           self.hist_back.triggered.connect(self.OnPrevslice)
-          
+
           self.hist_forward=QtWidgets.QAction(QtGui.QIcon("r_arrow.png"),'Next slice', self)
           self.toolbar.addAction(self.hist_forward)
           self.hist_forward.triggered.connect(self.OnNextslice)
-          
-          self.show() 
-    
+
+          self.show()
+
      def UpdateStatusBar(self, event):
           if event.inaxes:
                x, y = event.xdata, event.ydata
                self.stBar2.setText( "t = " + "%e"%(x) + " V = " + "%e"%(y))
-    
+
      def ChangeCursor(self, event):
           self.figure_canvas.setCursor(QtGui.QCursor(QtCore.Qt.CrossCursor))
 
-     
+
 
      def closeEvent(self, Event):
-          
+
           print("Close timeslice frame")
           self.callback.tsplotframe=None
           self.destroy()
-     
-     
+
+
      def OnPrevslice(self):
           if self.callback == None:
                print("Prev button clicked !")
@@ -266,108 +433,106 @@ class TSPlotFrame(QtWidgets.QMainWindow):
                print("Next button clicked !")
           else:
                self.callback.OnShow_next_slice()
-     
+
      #tsplotframe plot
      def my_plot(self, *args, **kwargs):
-        
+
         N=kwargs.pop('N', self.toolbar.N)
         ax=self.axes
         #saves input data into toolbar class object and reuses later
-        self.toolbar.myinitdata = args
-        
+        self.toolbar.rescale_data = args
+
         #dropping points for first plot
         t=args[0]
         V=args[1]
         rest=args[2:]
-        n=1 
+        n=1
         #take every nth point from data
         if len(t)> N:
             n=int(len(t)/N)
         tcut=t[::n]
         Vcut=V[::n]
-      
-        ax.autoscale(enable=True, axis='x', tight=False)
-        
-     
-        return ax.plot(tcut, Vcut, *rest, **kwargs)      
-        
+
+        ax.autoscale(enable=True, axis='x', tight=True)
+        return ax.plot(tcut, Vcut, *rest, **kwargs)
+
+
 
 #--
-## Classes for processing files selection
-#class Repository(QtWidgets.QDialog):
-#    def __init__(self, parent = None, title = 'Choose files to process', files=None):
-#          
-#        QtWidgets.QDialog.__init__(self, parent)
-#        self.parent=parent
-#        self.setWindowFlags(self.windowFlags() ^ QtCore.Qt.WindowContextHelpButtonHint)
-#        self.setWindowTitle(title)
-#        self.layout=QtWidgets.QGridLayout(self)
-#        
-#        ok=QtWidgets.QPushButton('Ok', self)
-#        ok.setDefault(True)
-#        cancel=QtWidgets.QPushButton('Cancel', self)
-#        ok.clicked.connect(self.OnOk)
-#        cancel.clicked.connect(self.OnCancel)
-#        selall=QtWidgets.QPushButton('Select All', self)
-#        selall.clicked.connect(self.OnSelectAll)
-#        desall=QtWidgets.QPushButton('Deselect All', self)
-#        desall.clicked.connect(self.OnDeselectAll)
-#          
-#        self.layout.addWidget(selall, 0, 0)
-#        self.layout.addWidget(desall, 0, 1)                
-#        self.layout.addWidget(ok, 3, 0)
-#        self.layout.addWidget(cancel, 3, 1)
-##          
-#        self.files=files
-#        self.parent=parent
-#        
-#        self.model = QtGui.QStandardItemModel()
-#        
-#        
-#        for i in files:
-#            item = QtGui.QStandardItem(i)
-#            item.setCheckable(True)
-#            self.model.appendRow(item)
-#        
-#        view=QtWidgets.QListView(parent)
-#        view.setModel(self.model)
-#        self.layout.addWidget(view, 1, 0, 2, 2)
-#        self.show()
-##
-#    def OnSelectAll(self):
-#        for index in range(self.model.rowCount()):
-#            item = self.model.item(index)
-#            if item.isCheckable() and item.checkState() == QtCore.Qt.Unchecked:
-#                item.setCheckState(QtCore.Qt.Checked)
+# Classes for processing files selection
+class Repository(QtWidgets.QDialog):
+    def __init__(self, parent = None, title = 'Choose files to process', files=None):
+
+        QtWidgets.QDialog.__init__(self, parent)
+        self.parent=parent
+        self.setWindowFlags(self.windowFlags() ^ QtCore.Qt.WindowContextHelpButtonHint)
+        self.setWindowTitle(title)
+        self.layout=QtWidgets.QGridLayout(self)
+
+        ok=QtWidgets.QPushButton('Ok', self)
+        ok.setDefault(True)
+        cancel=QtWidgets.QPushButton('Cancel', self)
+        ok.clicked.connect(self.OnOk)
+        cancel.clicked.connect(self.OnCancel)
+        selall=QtWidgets.QPushButton('Select All', self)
+        selall.clicked.connect(self.OnSelectAll)
+        desall=QtWidgets.QPushButton('Deselect All', self)
+        desall.clicked.connect(self.OnDeselectAll)
+
+        self.layout.addWidget(selall, 0, 0)
+        self.layout.addWidget(desall, 0, 1)
+        self.layout.addWidget(ok, 3, 0)
+        self.layout.addWidget(cancel, 3, 1)
 #
-#    def OnDeselectAll(self, event):
-#       for index in range(self.model.rowCount()):
-#            item = self.model.item(index)
-#            if item.isCheckable() and item.checkState() == QtCore.Qt.Checked:
-#                item.setCheckState(QtCore.Qt.Unchecked)
+        self.files=files
+        self.parent=parent
+
+        self.model = QtGui.QStandardItemModel()
+
+
+        for i in files:
+            item = QtGui.QStandardItem(i)
+            item.setCheckable(True)
+            self.model.appendRow(item)
+
+        view=QtWidgets.QListView(parent)
+        view.setModel(self.model)
+        self.layout.addWidget(view, 1, 0, 2, 2)
+        self.show()
 #
-#    def OnOk(self):
-#        for index in range(self.model.rowCount()):
-#            item = self.model.item(index)
-#            if item.isCheckable() and item.checkState() == QtCore.Qt.Checked:
-#                self.parent.hwstodo.append(self.files[index])
-#        self.hide()
-#        self.parent.Process()
-#        self.destroy()
-#        
-#    def OnCancel(self):
-#         self.destroy()
+    def OnSelectAll(self):
+        for index in range(self.model.rowCount()):
+            item = self.model.item(index)
+            if item.isCheckable() and item.checkState() == QtCore.Qt.Unchecked:
+                item.setCheckState(QtCore.Qt.Checked)
+
+    def OnDeselectAll(self, event):
+       for index in range(self.model.rowCount()):
+            item = self.model.item(index)
+            if item.isCheckable() and item.checkState() == QtCore.Qt.Checked:
+                item.setCheckState(QtCore.Qt.Unchecked)
+
+    def OnOk(self):
+        for index in range(self.model.rowCount()):
+            item = self.model.item(index)
+            if item.isCheckable() and item.checkState() == QtCore.Qt.Checked:
+                self.parent.hwstodo.append(self.files[index])
+        self.hide()
+        self.parent.Process()
+        self.destroy()
+
+    def OnCancel(self):
+         self.destroy()
 
 #----------------------------------------------------------------------
 # master frame, contains the plot image
 #----------------------------------------------------------------------
 class PlotFrame(QtWidgets.QMainWindow):
      def __init__(self, parent):
-          super(PlotFrame, self).__init__()
-          #QtWidgets.QMainWindow.__init__(self)
-         
+          QtWidgets.QMainWindow.__init__(self)
+
           self.setWindowTitle('DigiPlot')
-          
+
           # Parameters
           self.par = {}
           self.par["measure"] = True
@@ -383,8 +548,8 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["xmax"] = 1.e30
           self.par["scale_x"] = 1.0
           self.par["scale_y"] = 1.0
-          self.par["Vstep"] = 1.0
-          self.par["Vthreshold"] = 0.3
+          self.par["Vstep"] = .1
+          self.par["Vthreshold"] = 0.0
           self.par["Vhmin"] = 0.0
           self.par["Vhmax"] = 1.0
           self.par["VNbins"] = 100
@@ -396,8 +561,8 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["ts_Vhmin"] = 0.0
           self.par["ts_Vhmax"] = 1.0
           self.par["ts_VNbins"] = 100
-          
-          self.datadir = '../Raw_Data/'
+          self.par["convert_int"] = True # integer conversion
+          self.par["plot_histo_points"] = False # plot histogram data as points
           self.dt = -1.
           # inital settings
           self.ndata = 0
@@ -420,31 +585,32 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.current_histo = 0
           self.current_slice = 0
           self.histos = []
-          self.hwsproc = [] #hws files selection 
+          self.hwsproc = [] #hws files selection
           self.hwsnew = []
           self.hwstodo = []
-#          #load list of processed files
-#          self.proclistload() 
-          
+          self.datadir = './'
+          #load list of processed files
+          self.proclistload()
+
           # file information data
           self.parent = parent
           self.full_name = None
-          self.dir = '../Raw_Data/' #None
+          self.dir = None
           self.par_dir = None
           self.hist_dir = None
           self.res_dir = None
           self.name = None
           self.ext = None
           self.fileDataOK = False
-         
+
           #Change background color
           self.palette=QtGui.QPalette()
           self.palette.setColor(QtGui.QPalette.Background,QtCore.Qt.white)
-          
+
           #menu bar
           self.mbar = self.menuBar()
           # setup menues
-          
+
           # create status bar
           self.stBar1 = QtWidgets.QLabel('No file loaded')
           self.stBar1.setFrameStyle(2)
@@ -452,32 +618,26 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.stBar2 = QtWidgets.QLabel('No plot yet')
           self.stBar2.setFrameStyle(2)
           self.stBar2.setFrameShadow(48)
-          
+
           self.statusBar().addWidget(self.stBar1, 1)
           self.statusBar().addWidget(self.stBar2, 1)
-          
+
            # setup figure
           self.figure = Figure(figsize=(10,6))
           self.axes = self.figure.add_subplot(111)
           self.figure_canvas = FigureCanvas(self.figure)
+          #  Note that event is a MplEvent
           self.figure_canvas.mpl_connect('motion_notify_event', self.UpdateStatusBar)
           self.figure_canvas.mpl_connect('figure_enter_event', self.ChangeCursor)
+
+          # put figure cancas in center of Main Window
           self.setCentralWidget(self.figure_canvas)
-          self.all_plot=[]
-         
-          
-          #self.setCentralWidget(self.figure_canvas)
-          
-          
-          
+
           # add ToolBar
           self.toolbar = NavigationToolbar(self.figure_canvas, self)
-          self.toolbar.colors=colors
-          self.toolbar.markers=itertools.cycle(['.','*'])
-          self.toolbar.mker=next(self.toolbar.markers)
           self.addToolBar(self.toolbar)
-          
-          
+
+
           self.RS = RectangleSelector(self.axes, self.LineSelectCallback,
                                       drawtype='box', useblit=True,
                                       button=[1,3], # don't use middle button
@@ -488,69 +648,92 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.createMenubar()
           self.show()
 
-        
-#     def proclistload(self): #load list of processed files
-#        path_to_watch = self.datadir
-#        dircont = os.listdir (path_to_watch)
-#                
-#        if "ProcFiles.data" in dircont:
-#            print "\nLoad list of already processed files."
-#            fopen = open(self.datadir+"//ProcFiles.data")
-#            self.hwsproc=[x.strip('\n') for x in fopen.readlines()]
-#            
-#        else: 
-#            self.hwsproc=[]
-#            print "\nNo files were processed yet in current data directory."
-                
-#     def proclistsave(self): #save list of processed files
-#        path_to_watch = self.datadir
-#        dircont = os.listdir (path_to_watch)
-#                
-#        if "ProcFiles.data" in dircont:
-#            print "\nAppend list of processed files."
-#            fopen = open(self.datadir+"//ProcFiles.data", 'a')
-#            for item in self.hwsproc:
-#                fopen.write("%s\n" % item)
-#            fopen.close()
-#        else: 
-#            fopen = open(self.datadir+"//ProcFiles.data", 'w')
-#            for item in self.hwsproc:
-#                fopen.write("%s\n" % item)
-#            fopen.close()
-#            print "\nCreate list of processed files."
-         
-         
+     #plotframe my plot
+     def my_plot(self, *args, **kwargs):
+
+        N=kwargs.pop('N', self.toolbar.N)
+        ax=self.axes
+
+        #saves input data into toolbar class object and reuses later
+        self.toolbar.rescale_data = args
+
+        #dropping points for first plot
+        t=args[0]
+        V=args[1]
+        rest=args[2:]
+        n=1
+        #take every nth point from data
+        if len(t)> N:
+            n=int(len(t)/N)
+        tcut=t[::n]
+        Vcut=V[::n]
+
+        ax.autoscale(enable=True, axis='x', tight=True)
+        return ax.plot(tcut, Vcut, *rest, **kwargs)
+
+     def proclistload(self): #load list of processed files
+        path_to_watch = self.datadir
+        dircont = os.listdir (path_to_watch)
+
+        if "ProcFiles.data" in dircont:
+            print("\nLoad list of already processed files.")
+            fopen = open(self.datadir+"//ProcFiles.data")
+            self.hwsproc=[x.strip('\n') for x in fopen.readlines()]
+
+        else:
+            self.hwsproc=[]
+            print("\nNo files were processed yet in current data directory.")
+
+     def proclistsave(self): #save list of processed files
+        path_to_watch = self.datadir
+        dircont = os.listdir (path_to_watch)
+
+        if "ProcFiles.data" in dircont:
+            print("\nAppend list of processed files.")
+            fopen = open(self.datadir+"//ProcFiles.data", 'a')
+            for item in self.hwsproc:
+                fopen.write("%s\n" % item)
+            fopen.close()
+        else:
+            fopen = open(self.datadir+"//ProcFiles.data", 'w')
+            for item in self.hwsproc:
+                fopen.write("%s\n" % item)
+            fopen.close()
+            print("\nCreate list of processed files.")
+
+
      def menuData(self): # data for the menu
           return(
                ("&File",                                        # menu label
                 ("&Open", "Select data files", self.OnSelectFiles),  # menu items consisting of: label, text, handler
-                ("&Reload", "Reload data files", self.OnReload),  
-                ("&Load Parameters", "Load parameters", self.OnLoadParameters), 
-                ("&Save Parameters", "Save parameters", self.OnSaveParameters), 
-                ("&Save Histograms", "Save all histograms", self.OnSaveHistos), 
-                ("&Save Event Rate", "Save particle rates from peak detection", self.OnTSsaverate), 
+                ("&Reload", "Reload data files", self.OnReload),
+                ("&Load Parameters", "Load parameters", self.OnLoadParameters),
+                ("&Save Parameters", "Save parameters", self.OnSaveParameters),
+                ("&Save Histograms", "Save all histograms", self.OnSaveHistos),
+                ("&Save Event Rate", "Save particle rates from peak detection", self.OnTSsaverate),
                 ("&Quit", "Quit program", self.OnCloseWindow)), # label, status and handler
                #
                ("&Actions",
-#                ("&Scan data directory", "Scan directory", self.OnScan),
-#                (None, None, None),  # creates a separator bar in the menu
+                ("&Scan data directory", "Scan directory", self.OnScan),
+                (None, None, None),  # creates a separator bar in the menu
                 ("&Plot", "Plot data", self.OnPlot),
                 (None, None, None),  # creates a separator bar in the menu
                 ("&FindPeaks", "find peaks in the plotting data", self.OnFindPeaks),
                 (None, None, None),
                 ("&Histogram", "histogram peak data", self.OnHistogram),
+                ("&Fit Histogram", "Fit histogram peak area", self.OnFitHistogram),
                 ("&Delete Histogram", "delete all histograms", self.OnDeleteHistogram),
                 (None, None, None),
                 ("&Clear Figure", "Clear figure", self.OnClear)),
                #
                ("&Parameters",
-#                ("&Data directory", "Set data directory", self.OnSetScanDir), 
-#                (None, None, None),
-                ("&Detector Channel", "Set detector channel", self.OnSelectChannel), 
-                (None, None, None),			   
-                ("&Time Range", "Set time slot", self.OnSelectTimeSlot), 
+                ("&Data directory", "Set data directory", self.OnSetScanDir),
                 (None, None, None),
-                ("&Peak Finding", "Set parameters for peak finding", self.OnSetPeakpar), 
+		("&Detector Channel", "Set detector channel", self.OnSelectChannel),
+                (None, None, None),
+                ("&Time Range", "Set time slot", self.OnSelectTimeSlot),
+                (None, None, None),
+                ("&Peak Finding", "Set parameters for peak finding", self.OnSetPeakpar),
                 (None, None, None),
                 ("&Histogram", "Set histogram parameters", self.OnSetHisto),
                 (None, None, None),
@@ -558,7 +741,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                 (None, None, None),
                 ("Time &Slicing", "Set time slice parameters", self.OnSetTimeSlice)),
                ("&FFT",
-                ("&Calculate", "Calculate FFT", self.OnFFTcalc), 
+                ("&Calculate", "Calculate FFT", self.OnFFTcalc),
                 ("&Freq.Cut", "Apply freq. Cut", self.OnFFTcutfilter),
                 ("&R-Cut", "Apply r-value cut", self.OnFFTrfilter),
                 (None, None, None),
@@ -578,178 +761,222 @@ class PlotFrame(QtWidgets.QMainWindow):
                 ("&Show Histograms", "Plot Histograms", self.OnTSshowhistos)),
                ("&Options",
                 # ("&Unfiltered", "Use unfiltered data", self.OnNothing, 'RADIO'),
+                ("&Convert Integer", "Convert raw data to int16", self.OnToggleConvertInteger, 'CHECK'),
                 (None, None, None),
                 ("&SetLimits", "Set limits for data processing", self.OnLimits, 'RADIO'),
                 ("&Measure", "Measure differences in t and V", self.OnMeasure, 'RADIO'),
                 ("&Use Limits ", "Use filtered data", self.OnTogglelimits, 'CHECK'),
                 ("&Plot Lines ", "Draw lines or Points", self.OnToggleLines, 'CHECK'),
                 (None, None, None),
+                ("Plot &Histogram Points ", "Plot points instead of bars", self.OnToggleHistoPoints, 'CHECK'),
                 ("&Auto Histogram Limits ", "Do not calculate histogram limits automatically", self.OnToggleHistolimits, 'CHECK'),
                 (None, None, None),
                 ("&Filtered", "Use filtered data", self.OnUsefiltered, 'CHECK')),
                )
-               
+
      def createMenubar(self):
-         group=QtWidgets.QActionGroup(self) 
+         group=QtWidgets.QActionGroup(self)
          for eachMenuData in self.menuData():
-               
+
               menuLabel = eachMenuData[0]
               menuItems = eachMenuData[1:]
-               
+
 
               menu = QtWidgets.QMenu(menuLabel, self)
               for eachItem in menuItems:
                    if not eachItem[0]:
                        menu.addSeparator()
                        continue
-                   subMenu=QtWidgets.QAction(eachItem[0],self) 
+                   subMenu=QtWidgets.QAction(eachItem[0],self)
                    if len(eachItem) == 4: #never true
                         if eachItem[3]=='CHECK' or eachItem[3]=='RADIO':
                             subMenu.setCheckable(True)
                         if eachItem[3]=='RADIO':
                             subMenu.setActionGroup(group)
-                            
-                   
+
+
                    if 'Measure' in eachItem[0]: subMenu.setChecked(self.par['measure'])
+                   if 'Convert Integer' in eachItem[0]: subMenu.setChecked(self.par['convert_int'])
                    if 'SetLimits' in eachItem[0]: subMenu.setChecked(self.par['limits'])
                    if 'Use Limits' in eachItem[0]: subMenu.setChecked(self.par['use_limits'])
                    if 'Plot Lines' in eachItem[0]: subMenu.setChecked(self.par['draw_lines'])
                    if 'Auto Histogram' in eachItem[0]: subMenu.setChecked(self.par['auto_histo'])
+                   if 'Histogram Points' in eachItem[0]: subMenu.setChecked(self.par['plot_histo_points'])
                    if 'Filtered' in eachItem[0]: subMenu.setChecked(self.par['filtered'])
-                      
-                       
+
+
                    subMenu.triggered.connect(eachItem[2])
                    menu.addAction(subMenu)
-                   
-              
-              
-              self.mbar.addMenu(menu)          
-          
 
- 
-          
+
+
+              self.mbar.addMenu(menu)
+
+
+
+
 
      def set_file_info(self,filename):
           dir, fname = os.path.split(filename)
           name, ext = os.path.splitext(fname)
-          self.dir = dir + '//'
+          self.dir = dir+'//'
           self.name = name
           self.ext = ext
           # that's it
 
      #----------------------------------------------------------------------
-     # File menu routines   
+     # File menu routines
      #----------------------------------------------------------------------
-#     def OnScan(self): #scan for new files in data directory
-#        path_to_watch = self.datadir
-#        before = self.hwsproc
-#        after = os.listdir (path_to_watch)
-#        newf = False
-#        self.hwsnew = []
-#        for f in after:
-#            if f.endswith(".hws") and not f in before:
-#                print "Unprocessed file -- ", f
-#                newf = True
-#                self.hwsnew.append(f)
-#        print "Directory scanned for unprocessed .hws files \n"    
-#        if newf: 
-#            self.repo=Repository(self, 'Select files to process', self.hwsnew)
-#        else: print 'No unprocessed files found'           
-#                #print self.choosefiles
-                
-    
-     #process selected files           
-    
-#     def Process(self): 
-#        start_time=time.time()
-#        for f in self.hwstodo:
-#                
-#                #self.LoadParameters("C://Users//plasma//Desktop//par.data")
-#                #self.OnPlot(None)
-#                for i in range(0,1):
-#                    self.OnFindPeaks()
-#                    self.OnHistogram()
-#                    os.mkdir(self.dir+self.name+'//')
-#                    self.histoframe.figure.savefig(self.dir+self.name+'//Histogram_ch'+str(i)+'.png')
-#                
-#                self.RatesForAllChan(f)
-#                self.figure.savefig(self.dir+self.name+'//RatePlot.png')
-#                self.hwsproc.append(f)
-#                self.OnTShistogram()
-##                for i,h in enumerate(self.histos):
-##                    h_file = self.dir + self.name +'//histo_{0}.data'.format(i)
-##                    h.save(h_file)
-##                print " all histograms saved"
-#        self.proclistsave()
-##        print self.hwstodo
-#        self.hwstodo = []                
-#        end_time=time.time()
-#        work_time=end_time-start_time
-#        print "Elapsed time ", work_time 
-        
+     def OnScan(self): #scan for new files in data directory
+        path_to_watch = self.datadir
+        before = self.hwsproc
+        after = os.listdir (path_to_watch)
+        newf = False
+        self.hwsnew = []
+        for f in after:
+            if f.endswith(".hws") and not f in before:
+                print(("Unprocessed file -- ", f))
+                newf = True
+                self.hwsnew.append(f)
+        print("Directory scanned for unprocessed .hws files \n")
+        if newf:
+            self.repo=Repository(self, 'Select files to process', self.hwsnew)
+        else: print('No unprocessed files found')
+                #print self.choosefiles
+
+
+     #process selected files
+
+     def Process(self):
+        start_time=time.time()
+        for f in self.hwstodo:
+                self.RatesForAllChan(f)
+                #self.LoadParameters("C://Users//plasma//Desktop//par.data")
+                #self.OnPlot(None)
+                #for i in range(0,2):
+                #self.OnFindPeaks(None)
+                #self.OnHistogram(None)
+                #os.mkdir(self.dir+self.name+'//')
+                #self.histoframe.figure.savefig(self.dir+self.name+'//Histogram.png')
+                #self.OnTScalc(None)
+                #self.OnTSfindpeaks(None)
+                #self.OnClear(None)
+                #self.OnTSplotrate(None)
+                #self.figure.savefig(self.dir+self.name+'//RatePlot.png')
+                #self.hwsproc.append(f)
+                #for i,h in enumerate(self.histos):
+                #    h_file = self.dir + self.name +'//histos_{0}.data'.format(i)
+                #    h.save(h_file)
+                #print " all histograms saved"
+        #self.proclistsave()
+        #print self.hwstodo
+        self.hwstodo = []
+        end_time=time.time()
+        work_time=end_time-start_time
+        print(("Elapsed time ", work_time))
+
      def RatesForAllChan(self,ftw):
          self.OnClear()
          try:
-             print((self.datadir + "/params.data"))
-             self.LoadParameters(self.datadir + "params.data")
+             self.LoadParameters("C://Users//Alex//Desktop//par.data")
          except:
              pass
-         for i in range(0,1):
-             
+         for i in range(0,4):
+
              self.par['Detector channel'] = i
              self.OpenFile(self.datadir+"//"+ftw)
              self.OnTScalc()
              self.OnTSfindpeaks()
              self.OnTSplotrate()
-     
-             
-#     def OnSetScanDir(self):
-#         
-#         print "Set data directory"
-#         dir_dlg=QtWidgets.QFileDialog.getExistingDirectory(self, 'Select a directory')
-#         if dir_dlg != '':
-#             # User has selected something, get the path, set the window's title to the path
-#             # store relevant file information
-#             self.datadir = dir_dlg
-#         else:
-#             print "so, you changed your mind, I will do nothing"
-#             return
-#         print 'Data directory: ', self.datadir
-#         #self.proclistload()
-                    
+
+
+     def OnSetScanDir(self):
+
+         print("Set data directory")
+         dir_dlg=QtWidgets.QFileDialog.getExistingDirectory(self, 'Select a directory')
+         if dir_dlg != '':
+             # User has selected something, get the path, set the window's title to the path
+             # store relevant file information
+             self.datadir=dir_dlg
+         else:
+             print("so, you changed your mind, I will do nothing")
+             return
+         print(('Data directory: ', self.datadir))
+         #self.proclistload()
+
      def OnSelectFiles(self):
          # Create a file-open dialog in the current directory
-         
+
          filetypes = '*.hws'
          # use a regular file dialog
          if self.dir == None:
              self.dir = os.getcwd()
-             
+
          file_dlg=QtWidgets.QFileDialog.getOpenFileName(self, 'Select a file', self.dir, filetypes )
-         
+
          if file_dlg[0] != '':
              # User has selected something, get the path, set the window's title to the path
              filename=file_dlg[0]
              # store relevant file information
-             self.OpenFile(filename)
+             self.set_file_info(filename)
          else:
              print("so, you changed your mind, I will do nothing")
              filename = None
              return
-         
-         
-     def OpenFile(self, fpname):
-         self.set_file_info(fpname)
-         self.OnLoad()
-         self.select_data()
-         print("Done")
 
-     def OnLoad(self):
-         
+
+         # get channel number
          chan_num = "%0d"%(int(self.par["Detector channel"]))
          self.stBar1.setText('Current file : %s / Channel : %s'%(self.name+self.ext, chan_num))
          # open file
-         print("Open file : ",self.dir + self.name + self.ext)
+         print(("Open file : ",self.dir + self.name + self.ext))
+         self.f = h5py.File(self.dir + self.name + self.ext, 'r')
+         # get the data
+         # ee information
+         print("Get data")
+         data_root = 'wfm_group0/traces/trace' + chan_num + '/'
+         try:
+             self.t0 = self.f[data_root + 'x-axis'].attrs['start']
+             self.dt = self.f[data_root + 'x-axis'].attrs['increment']
+             # measured data
+             # scale dataset
+             self.scale = self.f[data_root + 'y-axis/scale_coef'][()]
+             # get the y dataset
+             self.nall = self.f[data_root + 'y-axis/data_vector/data'].shape[0]
+         except:
+             mb=QtWidgets.QMessageBox(self)
+             mb.setText("Problems loading data " + data_root)
+             mb.exec_()
+             return
+         self.ndata = self.nall
+         self.ti = self.t0
+         self.tf = self.t0 + (self.ndata-1)*self.dt
+         self.par["tmin"] = self.t0
+         self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
+         # WB temp solution 8/13/13
+         # set the type as 16 bit signed, this is not good the data type should come from
+         # the hdf file
+         if self.par["convert_int"]:
+              self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()].astype('int16')
+         else:
+              self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()]
+
+         # make the time axis
+         print("Calculate data")
+         self.tall = self.t0 + self.dt*np.arange(self.ydata.shape[0], dtype = float)
+         # select the data to be worked on
+         self.f.close()
+         print("Select data")
+         self.select_data()
+         print("Done")
+
+     def OpenFile(self, fpname):
+
+         self.set_file_info(fpname)
+         chan_num = "%0d"%(int(self.par["Detector channel"]))
+         self.stBar1.setText('Current file : %s / Channel : %s'%(self.name+self.ext, chan_num))
+         # open file
+         print(("Open file : ",self.dir + self.name + self.ext))
          self.f = h5py.File(self.dir + self.name + self.ext, 'r')
          # get the data
          # time information
@@ -760,7 +987,7 @@ class PlotFrame(QtWidgets.QMainWindow):
              self.dt = self.f[data_root + 'x-axis'].attrs['increment']
              # measured data
              # scale dataset
-             self.scale = self.f[data_root + 'y-axis/scale_coef'].value
+             self.scale = self.f[data_root + 'y-axis/scale_coef'][()]
              # get the y dataset
              self.nall = self.f[data_root + 'y-axis/data_vector/data'].shape[0]
          except:
@@ -770,15 +997,16 @@ class PlotFrame(QtWidgets.QMainWindow):
              return
          self.ndata = self.nall
          self.ti = self.t0
-         self.tf = self.t0 + (self.ndata-1)*self.dt        
-         
+         self.tf = self.t0 + (self.ndata-1)*self.dt
+         self.par["tmin"] = self.t0
+         self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
          # WB temp solution 8/13/13
          # set the type as 16 bit signed, this is not good the data type should come from
          # the hdf file
-         if convert_int:
-              self.ydata = self.f[data_root + 'y-axis/data_vector/data'].value.astype('int16')
+         if self.par["convert_int"]:
+              self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()].astype('int16')
          else:
-              self.ydata = self.f[data_root + 'y-axis/data_vector/data'].value
+              self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()]
 
          # make the time axis
          print("Calculate data")
@@ -786,30 +1014,55 @@ class PlotFrame(QtWidgets.QMainWindow):
          # select the data to be worked on
          self.f.close()
          print("Select data")
-     
-     def OnReload(self):
-         self.OnLoad()
          self.select_data()
          print("Done")
-         
-     def select_data(self):
-          # select data range to work on
-          # debuggin
-          if self.ndata == 0:
-              print('No data to select') 
-              return
-          if self.par["tmin"]<self.tall[0]: self.par["tmin"] = self.tall[0]
-          if self.par["tmax"]>self.tall[-1]: self.par["tmax"] = self.tall[-1]  
-          print("Get Window")
-          sl = self.get_time_window( self.par["tmin"], self.par["tmax"])
-          # the final value
-          print("Recalculate")
-          self.ndata = sl.stop - sl.start
-          self.V = self.scale[0] + self.scale[1]*self.ydata[sl]
-          self.t = self.tall[sl]
-          
-          print("Finished recalculation")
-         
+
+
+     def OnReload(self):
+         # reload data file
+         # get channel number
+         chan_num = "%0d"%(int(self.par["Detector channel"]))
+         self.stBar1.setText('Current file : %s / Channel : %s'%(self.name+self.ext, chan_num))
+         # open file
+         print(("Open file : ",self.dir + self.name + self.ext))
+         self.f = h5py.File(self.dir + self.name + self.ext, 'r')
+         # get the data
+         # time information
+         print("Get data")
+         data_root = 'wfm_group0/traces/trace' + chan_num + '/'
+         try:
+             self.t0 = self.f[data_root + 'x-axis'].attrs['start']
+             self.dt = self.f[data_root + 'x-axis'].attrs['increment']
+             # measured data
+             # scale dataset
+             self.scale = self.f[data_root + 'y-axis/scale_coef'][()]
+             # get the y dataset
+             self.nall = self.f[data_root + 'y-axis/data_vector/data'].shape[0]
+         except:
+             mb=QtWidgets.QMessageBox(self)
+             mb.setText("Problems loading data " + data_root)
+             mb.exec_()
+             return
+         self.ndata = self.nall
+         self.ti = self.t0
+         self.tf = self.t0 + (self.ndata-1)*self.dt
+         # self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
+         # WB temp solution 8/13/13
+         # set the type as 16 bit signed, this is not good the data type should come from
+         # the hdf file
+         if self.par["convert_int"]:
+              self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()].astype('int16')
+         else:
+              self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()]
+         # make the time axis
+         print("Calculate data")
+         self.tall = self.t0 + self.dt*np.arange(self.ydata.shape[0], dtype = float)
+         # select the data to be worked on
+         self.f.close()
+         print("Select data")
+         self.select_data()
+         print("Done")
+
      def OnLoadParameters(self):
           # Create a file-open dialog in the current directory
           filetypes = '*.data'
@@ -830,7 +1083,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                print((key, " ", self.par[key]))
           # now set the check marks
           # get the menus
-          
+
           menus = [i.menu() for i in self.mbar.actions()]
           items = None
           item_dict = {}
@@ -846,24 +1099,26 @@ class PlotFrame(QtWidgets.QMainWindow):
                               item_dict[key] = item
           # set the values for the options menu
           if item_dict != {}:
-               item_dict["SetLimits"].setChecked(self.par["limits"]); print("SetLimits = ", self.par["limits"])
-               item_dict["Measure"].setChecked(self.par["measure"]); print("Measure = ", self.par["measure"])
-               item_dict["Use Limits"].setChecked(self.par["use_limits"]); print("Use Limits = ",self.par["use_limits"])
-               item_dict["Auto Histogram Limits"].setChecked(self.par["auto_histo"]); print("Auto Histogram Limits = ", self.par["auto_histo"])
-               item_dict["Filtered"].setChecked(self.par["filtered"]); print("Filtered = ", self.par["filtered"])
-               item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print("draw_lines = ", self.par["draw_lines"])
+               item_dict["Convert Integer"].setChecked(self.par["convert_int"]); print(("Convert Integer = ", self.par["convert_int"]))
+               item_dict["SetLimits"].setChecked(self.par["limits"]); print(("SetLimits = ", self.par["limits"]))
+               item_dict["Measure"].setChecked(self.par["measure"]); print(("Measure = ", self.par["measure"]))
+               item_dict["Use Limits"].setChecked(self.par["use_limits"]); print(("Use Limits = ",self.par["use_limits"]))
+               item_dict["Auto Histogram Limits"].setChecked(self.par["auto_histo"]); print(("Auto Histogram Limits = ", self.par["auto_histo"]))
+               item_dict['Histogram Points'].setChecked(self.par['plot_histo_points']);print(("Plot Histogram Points = ", self.par["plot_histo_points"]))
+               item_dict["Filtered"].setChecked(self.par["filtered"]); print(("Filtered = ", self.par["filtered"]))
+               item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print(("draw_lines = ", self.par["draw_lines"]))
           self.select_data()
           # all done
-          
+
      def LoadParameters(self,fpname):
-          
+
           p = pfile(fpname)
           for key in self.par:
                self.par[key] = p.get_value(key)
                print((key, " ", self.par[key]))
           # now set the check marks
           # get the menus
-          
+
           menus = [i.menu() for i in self.mbar.actions()]
           items = None
           item_dict = {}
@@ -879,15 +1134,17 @@ class PlotFrame(QtWidgets.QMainWindow):
                               item_dict[key] = item
           # set the values for the options menu
           if item_dict != {}:
+               item_dict["Convert Integer"].setChecked(self.par["convert_int"]); print(("Convert Integer = ", self.par["convert_int"]))
                item_dict["SetLimits"].setChecked(self.par["limits"]); print(("SetLimits = ", self.par["limits"]))
                item_dict["Measure"].setChecked(self.par["measure"]); print(("Measure = ", self.par["measure"]))
                item_dict["Use Limits"].setChecked(self.par["use_limits"]); print(("Use Limits = ",self.par["use_limits"]))
                item_dict["Auto Histogram Limits"].setChecked(self.par["auto_histo"]); print(("Auto Histogram Limits = ", self.par["auto_histo"]))
+               item_dict['Histogram Points'].setChecked(self.par['plot_histo_points']);print(("Plot Histogram Points = ", self.par["plot_histo_points"]))
                item_dict["Filtered"].setChecked(self.par["filtered"]); print(("Filtered = ", self.par["filtered"]))
                item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print(("draw_lines = ", self.par["draw_lines"]))
           self.select_data()
           # all done
-          
+
 
      def OnSaveParameters(self,event):
           # Create a file-open dialog in the current directory
@@ -895,7 +1152,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           # use a regular file dialog
           if self.par_dir == None:
               self.par_dir = os.getcwd()
-          
+
           file_dlg=QtWidgets.QFileDialog.getSaveFileName(self, 'Select parameter file to save', self.dir,
                                                          filetypes)
           if file_dlg[0] != '':
@@ -912,12 +1169,31 @@ class PlotFrame(QtWidgets.QMainWindow):
           for key in self.par:
                o.write( "%s  =  %r\n "%(key, self.par[key] ))
           o.close()
-          
+
      def get_time_window(self, tmin, tmax):
           # find range of time values between tmin and tmax
           nmin = int( (tmin - self.t0)/self.dt )
           nmax = min( (int( (tmax - self.t0)/self.dt ) + 1), self.nall -1 )
           return slice(nmin, nmax + 1)
+
+     def select_data(self):
+          # select data range to work on
+          # debuggin
+          if self.ndata == 0:
+               return
+          if (self.par["tmin"] < self.tall[0]):
+               self.par["tmin"] = self.tall[0]
+          if (self.par["tmax"] > self.tall[-1:][0]):
+               self.par["tmax"] = self.tall[-1:][0]
+          print("Get Window")
+          sl = self.get_time_window( self.par["tmin"], self.par["tmax"])
+          # the final value
+          print("Recalculate")
+          self.ndata = sl.stop - sl.start
+          self.V = self.scale[0] + self.scale[1]*self.ydata[sl]
+          self.t = self.tall[sl]
+
+          print("Finished recalculation")
 
      def ChangeCursor(self, event):
           self.figure_canvas.setCursor(QtGui.QCursor(QtCore.Qt.CrossCursor))
@@ -947,7 +1223,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                xpath = [self.par["xmin"], self.par["xmax"], self.par["xmax"], self.par["xmin"]]
                ypath = [self.ymin, self.ymin, self.ymax, self.ymax]
                self.axes.fill(xpath, ypath, 'b', alpha = 0.5, edgecolor = 'k')
-               self.axes.text(self.par["xmin"], self.ymin, "%5.2e, %5.2e"%(start_pos[0], start_pos[1]), 
+               self.axes.text(self.par["xmin"], self.ymin, "%5.2e, %5.2e"%(start_pos[0], start_pos[1]),
                               ha = 'right', va = 'top')
                self.axes.text(self.par["xmax"], self.ymax, "%5.2e, %5.2e"%(end_pos[0], end_pos[1]) )
           if self.par["limits"]:
@@ -958,12 +1234,13 @@ class PlotFrame(QtWidgets.QMainWindow):
                # self.axes.axvspan(self.par["xmin"], self.par["xmax"], color = 'g', alpha = 0.5)
           self.figure_canvas.draw()
 
-            
+
      def UpdateStatusBar(self, event):
           if event.inaxes:
                x, y = event.xdata, event.ydata
                self.stBar2.setText( "t= " + "%e"%(x) + "  V= " + "%e"%(y))
      def OnCloseWindow(self):
+
           if self.histoframe != None:
                try:
                     self.histoframe.destroy()
@@ -974,19 +1251,14 @@ class PlotFrame(QtWidgets.QMainWindow):
                     self.tsplotframe.destroy()
                except:
                     print("cannot destroy tsplotframe !")
-          
-          self.destroy()
-          QtCore.QCoreApplication.instance().exit()
+          print("Closing All")
+          self.parent.quit()
+          #self.destroy()
           # all done
-     def closeEvent(self, event):
-         self.OnCloseWindow()
-
      #----------------------------------------------------------------------
-     # Action menu routines   
+     # Action menu routines
      #----------------------------------------------------------------------
      def OnPlot(self):
-          if (self.par['Detector channel'] in self.toolbar.ch_n) and (self.name[-6:] in self.toolbar.fn):
-              return
           V = None
           if self.par["filtered"]:
                V = self.Vinv
@@ -995,12 +1267,15 @@ class PlotFrame(QtWidgets.QMainWindow):
           if (self.t is None) or (V is None):
                print("Nothing to plot !")
                return
-          self.toolbar.t.append(self.t)
-          self.toolbar.V.append(V)
-          self.toolbar.ch_n.append(self.par['Detector channel'])
-          self.toolbar.fn.append(self.name[-6:])
-        
-          self.toolbar.thinning()
+          if self.par["draw_lines"]:
+               self.all_plot=self.my_plot(self.t[:V.shape[0]], V)
+          else:
+               self.all_plot=self.my_plot(self.t[:V.shape[0]], V, '.')
+          # set the proper limits
+          self.axes.set_xlim(self.t[0], self.t[:V.shape[0]][-1])
+          self.axes.set_xlabel('t')
+          self.axes.set_ylabel('V')
+          self.figure_canvas.draw()
 
      def OnClear(self):
           self.figure.clf()
@@ -1011,12 +1286,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                                       minspanx=5, minspany=5,
                                       spancoords='pixels')
           self.figure_canvas.draw()
-          self.toolbar.ch_n=[]
-          self.toolbar.t=[]
-          self.toolbar.V=[]
-          self.toolbar.fn=[]
-          self.toolbar.markers=itertools.cycle(['.','*'])
-          self.toolbar.mker=next(self.toolbar.markers)
+
      def OnFindPeaks(self):
           if (self.t is None) or (self.V is None):
                print("No data, nothing to find !")
@@ -1034,20 +1304,20 @@ class PlotFrame(QtWidgets.QMainWindow):
                                                  limits = self.par["use_limits"], \
                                                  get_window = get_window, \
                                                  power = 5)
-          print('----------> found ', len(self.MAXTAB[0]), ' peaks')
+          print(('----------> found ', len(self.MAXTAB[0]), ' peaks'))
           # get the values above the V threshold
           tp = np.array(self.MAXTAB[0])
           Vp = np.array(self.MAXTAB[1])
           iw = np.where( Vp > self.par["Vthreshold"] )[0]
-          print('----------> store ', len(iw), ' peaks above threshold')
+          print(('----------> store ', len(iw), ' peaks above threshold'))
           self.t_peak = tp[iw]
           self.V_peak = Vp[iw]
           if self.par["auto_histo"] and not len(iw) == 0:
                self.par["Vhmin"] = self.V_peak.min()
                self.par["Vhmax"] = self.V_peak.max()
-          
+
           self.axes.set_autoscaley_on(True)
-          self.axes.plot(self.t_peak,self.V_peak, self.toolbar.mker , color=colors[self.par['Detector channel']])
+          self.axes.plot(self.t_peak,self.V_peak,'r.')
           self.figure_canvas.draw()
 
      def OnHistogram(self):
@@ -1069,6 +1339,23 @@ class PlotFrame(QtWidgets.QMainWindow):
           latest_histo = len(self.histos) - 1
           self.show_histos(latest_histo)
 
+     def OnFitHistogram(self):
+         # fit current histo
+         # pl.sca(self.histoframe.axes)
+         h = self.histos[self.current_histo]
+         print("limits = ", self.histoframe.axes.get_xlim())
+         cmin, cmax = self.histoframe.axes.get_xlim()
+         h.fit(cmin, cmax)
+         fwhm = h.sigma.value*2.355
+         pos = h.mean.value
+         res = fwhm/pos*100.
+         h.title = 'FWHM = {:.3e}, Position = {:.3e}, Resolution = {:.2e}%'.format(fwhm, pos, res)
+         self.show_histos(self.current_histo)
+         h.plot_fit(axes =  self.histoframe.axes)
+         self.histoframe.axes.set_xlim((cmin,cmax)) # reset the last histogram limits
+         self.histoframe.figure_canvas.draw()
+         print('FWHM = ', h.sigma.value*2.355)          # 2.355 = 2sqrt(2ln2)
+
      def OnDeleteHistogram(self):
           self.histos = []
           self.current_histo = 0
@@ -1077,7 +1364,6 @@ class PlotFrame(QtWidgets.QMainWindow):
                self.histoframe.figure.clf()
                self.histoframe.axes = self.histoframe.figure.add_subplot(111)
                self.histoframe.figure_canvas.draw()
-               print ('All histograms have been deleted')
 
      def OnSaveHistos(self):
           if self.histos == []:
@@ -1098,7 +1384,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                name, ext = os.path.splitext(fname)
                # store relevant file information
                N = len(self.histos)-1
-               print(("will save to : "+dir+"/"+name+"_0.data ... " +name+"_{0}.data".format(N))) 
+               print(("will save to : "+dir+"/"+name+"_0.data ... " +name+"_{0}.data".format(N)))
           else:
                print("so, you changed your mind, I will do nothing")
                filename = None
@@ -1120,9 +1406,12 @@ class PlotFrame(QtWidgets.QMainWindow):
                # clear figure
                self.histoframe.figure.clf()
                self.histoframe.axes = self.histoframe.figure.add_subplot(111)
-          self.histos[n].plot(axes = self.histoframe.axes)
+          if self.par['plot_histo_points']:
+              self.histos[n].plot_exp(axes = self.histoframe.axes, ignore_zeros = True)
+          else:
+              self.histos[n].plot(axes = self.histoframe.axes)
           self.histoframe.figure_canvas.draw()
-          
+
 
      def show_slice(self, n):
           if self.t_slice is None:
@@ -1137,7 +1426,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                self.tsplotframe.axes.cla()
           self.tsplot(n)
           self.tsplotframe.figure_canvas.draw()
-          
+
 
      def OnTScalc(self):
           if (self.t is None) or (self.V is None):
@@ -1148,7 +1437,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                stop = self.par["ts_start"]
                self.par["ts_start"] = self.par["ts_stop"]
                self.par["ts_stop"] = stop
-          self.par["ts_start"] = min( self.par["ts_start"], self.par["tmax"]) 
+          self.par["ts_start"] = min( self.par["ts_start"], self.par["tmax"])
           self.par["ts_stop"] = max( self.par["ts_stop"], self.par["tmin"])
           self.par["ts_start"] = max( self.par["ts_start"], self.par["tmin"])
           self.par["ts_stop"] = min( self.par["ts_stop"], self.par["tmax"])
@@ -1164,7 +1453,7 @@ class PlotFrame(QtWidgets.QMainWindow):
               new_shape = (ns, int(self.t[sl].shape[0]) )
           # the new data have the shape (slice_nr, data_in_slice)
           # axis-0 slice number
-          # axis-1 data within slice 
+          # axis-1 data within slice
           print('resizing time data array, be patient !')
           self.t_slice = np.resize(self.t[sl], new_shape )
           if self.par["filtered"]:
@@ -1188,13 +1477,13 @@ class PlotFrame(QtWidgets.QMainWindow):
           t = self.t_slice[n]
           # show the data
           if self.par["draw_lines"]:
-              self.tsplotframe.all_plot=self.tsplotframe.my_plot(t[:V.shape[0]], V) 
+              self.tsplotframe.all_plot=self.tsplotframe.my_plot(t[:V.shape[0]], V)
           else:
-              self.tsplotframe.all_plot=self.tsplotframe.my_plot(t[:V.shape[0]], V, '.') 
+              self.tsplotframe.all_plot=self.tsplotframe.my_plot(t[:V.shape[0]], V, '.')
           # show peak positions if there are any
           if self.ts_counts is not None:
                if self.ts_counts[n] != 0:
-                   self.tsplotframe.axes.set_autoscaley_on(True) 
+                   self.tsplotframe.axes.set_autoscaley_on(True)
                    self.tsplotframe.axes.plot(self.ts_tp[n], self.ts_Vp[n], 'r.')
           self.tsplotframe.axes.set_xlabel('t')
           self.tsplotframe.axes.set_ylabel('V')
@@ -1202,7 +1491,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.tsplotframe.axes.set_title(s_title)
           self.tsplotframe.figure_canvas.draw()
 
- 
+
      def OnTSfindpeaks(self):
           if self.V_slice is None:
                print("No time slices!")
@@ -1236,17 +1525,12 @@ class PlotFrame(QtWidgets.QMainWindow):
                return
           rate = self.ts_counts/self.par["ts_width"]
           rate_err = np.sqrt(self.ts_counts)/self.par["ts_width"]
-          
-          f1=pl.figure()
-          pl.title('Rate')
-          f1.axes[0].ticklabel_format(axis='y', style='sci', scilimits=(0,0))
-          f1.axes[0].errorbar(self.ts_av, rate, linestyle='-', marker='.', capsize = 0., color=colors[self.par['Detector channel']])
-          f1.axes[0].fill_between(self.ts_av, rate-rate_err, rate+rate_err, alpha=0.3, color=colors[self.par['Detector channel']])
-          f1.axes[0].set_xlabel('t [s]')
-          f1.axes[0].set_ylabel('Rate [Hz]')
-          f1.draw()
-          
-          # pl.locator_params(axis='x', nbins=30)
+
+          self.axes.errorbar(self.ts_av, rate, yerr = rate_err, marker='o', ls = 'None')
+          self.axes.set_xlabel('t')
+          self.axes.set_ylabel('Rate')
+          self.figure_canvas.draw()
+
 
 
      def OnTSsaverate(self):
@@ -1282,8 +1566,8 @@ class PlotFrame(QtWidgets.QMainWindow):
           for i,t in enumerate(self.ts_av):
               o.write( "{} {} {} \n".format(t, rate[i], rate_err[i]) )
           o.close()
-          # all done    
-         
+          # all done
+
      def OnTShistogram(self):
           if (self.ts_Vp is None):
                print("Nothing to histogram !")
@@ -1291,7 +1575,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           # clear histos list
           self.histos = []
           for i,Vp in enumerate(self.ts_Vp):
-               if Vp.any():
+               if Vp:
                    h = LT.box.histo( Vp, \
                                      range = (self.par["ts_Vhmin"], self.par["ts_Vhmax"]), \
                                      bins = int(self.par["ts_VNbins"]))
@@ -1317,7 +1601,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                print("at the last histogram")
                n = len(self.histos)-1
           self.show_histos(n)
-          
+
      def OnShow_prev_histo(self):
           n = self.current_histo - 1
           if n < 0:
@@ -1338,16 +1622,16 @@ class PlotFrame(QtWidgets.QMainWindow):
                print("at the last slice")
                n = len(self.ts_av)-1
           self.show_slice(n)
-          
+
      def OnShow_prev_slice(self):
           n = self.current_slice - 1
           if n < 0:
                print("at the first slice")
                n = 0
           self.show_slice(n)
-          
+
      #---------------------------------------------------------------------
-     # FFT on time slices     
+     # FFT on time slices
      #---------------------------------------------------------------------
      def OnTSFFTcalc(self):
           if self.ts_av is None:
@@ -1360,12 +1644,12 @@ class PlotFrame(QtWidgets.QMainWindow):
               t = self.t_slice[i]
  #             V = self.V_slice[i]
               print(("Calculate FFT for slice: ", i, " and ", len(t), " data points"))
-              ffts = FFT.FFT(t)   
+              ffts = FFT.FFT(t)
               ffts.transform(self.V)
               ffts.get_ps()
               ffts.logp = np.log10(ffts.p)
               # self.ts_FFT.append(ffts)
-          print("all TS FFT completed") 
+          print("all TS FFT completed")
 
      def OnTSFFTplotps(self,event):
           # plot power spectrum
@@ -1381,27 +1665,20 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.axes.set_ylabel('Power')
           self.axes.set_title('log(Power)')
           self.figure_canvas.draw()
-          
+
 
      #----------------------------------------------------------------------
      # Parameter routines
      #----------------------------------------------------------------------
      def OnSelectChannel(self):
-          # show and change parameters
-          # parameter keys
-          pkeys=['Detector channel']
-          data = {pkeys[0]:"%d"%(int(self.par["Detector channel"]))}
-          pdlg = NumberDialog(data, self, title="Detector channel", \
-                              labels = pkeys, \
-                                  keys = pkeys, \
-                                      about_txt = "Select the data channel")
+          pkeys = ['Detector channel']
+          data = {pkeys[0] : "%d"%( int( self.par["Detector channel"] ) ) }
+          pdlg = NumberDialog(data, self, title="Detector channel", labels = pkeys, keys = pkeys, about_txt = "Select the data channel")
           pdlg.exec_()
           # now set the new parameters
           self.par['Detector channel']=int(pdlg.data[pkeys[0]])
           pdlg.destroy()
-          
-          self.OnReload()
-          #self.OnPlot()
+
 
      def OnSelectTimeSlot(self):
           # show and change the parameters
@@ -1422,7 +1699,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["tmin"] = float(pdlg.data[pkeys[1]])
           self.par["tmax"] = float(pdlg.data[pkeys[2]])
           pdlg.destroy()
-          
+
           self.select_data()
 
      def OnSetPeakpar(self):
@@ -1446,7 +1723,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["Vstep"] = float(pdlg.data[pkeys[2]])
           self.par["Vthreshold"] = float(pdlg.data[pkeys[3]])
           pdlg.destroy()
-          
+
      def OnSetHisto(self):
           # show and change the parameters
           # parameter keys
@@ -1455,7 +1732,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           data = {pkeys[0]:"%5.3f"%(self.par["Vhmin"]), \
                   pkeys[1]:"%5.3f"%(self.par["Vhmax"]), \
                   pkeys[2]:"%d"%(int(self.par["VNbins"]))}
-          
+
           pdlg = NumberDialog(data, self, title="Histogram", \
                               labels = pkeys, \
                               keys = pkeys, \
@@ -1597,7 +1874,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.fft.store_fft_coeff(self.fft.an, self.fft.bn)
           self.fft.get_ps()
           self.fft.logp = np.log10(self.fft.p)
-     
+
      def OnFFTinvert(self):
           print("Invert FFT")
           if not self.fft.ok:
@@ -1617,11 +1894,15 @@ class PlotFrame(QtWidgets.QMainWindow):
           print(("limits = ", self.par["limits"], " measure = ", self.par["measure"]))
 
      def OnLimits(self):
-          # to measure create a Selector
+          # to measure create a Rectangle Selector
           self.RS.set_active(True)
           self.par["measure"] = False
           self.par["limits"] = True
           print(("limits = ", self.par["limits"], " measure = ", self.par["measure"]))
+
+     def OnToggleConvertInteger(self):
+          self.par["convert_int"] = not self.par["convert_int"]
+          print(("convert integers = ", self.par["convert_int"]))
 
      def OnTogglelimits(self):
           self.par["use_limits"] = not self.par["use_limits"]
@@ -1631,17 +1912,18 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["auto_histo"] = not self.par["auto_histo"]
           print(("auto histo = ", self.par["auto_histo"]))
 
+     def OnToggleHistoPoints(self,event):
+          self.par["plot_histo_points"] = not self.par["plot_histo_points"]
+          print(("Plot histogram points = ", self.par["plot_histo_points"]))
+
      def OnToggleLines(self, event):
           self.par["draw_lines"] = not self.par["draw_lines"]
           print(("draw Lines = ", self.par["draw_lines"]))
-          try:
-              self.toolbar.thinning()
-          except:
-              'Thinning did not work'
+
      def OnUsefiltered(self, event):
           self.par["filtered"] = not self.par["filtered"]
           print(("use filtered = ", self.par["filtered"]))
-          
+
      def OnNothing(self):
           print("do nothing")
 
@@ -1661,18 +1943,16 @@ def RatesForAlS(app, chnum):
          rate_err = np.sqrt(fobj.ts_counts)/fobj.par["ts_width"]
          pl.errorbar(fobj.ts_av, rate, yerr = rate_err, marker='o', ls = 'None')
          fobj.destroy()
-         
+
 if __name__ == '__main__':
     #Create App
-    
-    app = QtCore.QCoreApplication.instance()
-    
-    if app is None:
-        app = QtWidgets.QApplication(sys.argv)
-    
+    #app = QtCore.QCoreApplication.instance()
+    app = QtWidgets.QApplication(sys.argv)
     #Create PlotFrame in App
-    frame = PlotFrame(app) 
-    
+    frame = PlotFrame(app)
+
+    #RatesForAlS(app, 0)
     sys.exit(app.exec_())
-     
-     
+
+
+

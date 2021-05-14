@@ -1,0 +1,18 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+
+python module ffind_peaks ! in 
+    interface  ! in :ffind_peaks
+        subroutine find_peaks(n,delta,val,results,min_pos,max_pos) ! in :ffind_peaks:ffind_peaks.f90
+            integer intent(in) :: n
+            real*8 intent(in) :: delta
+            real*8 dimension(:),intent(in) :: val
+            integer dimension(2),intent(inout) :: results
+            integer dimension(:),intent(inout) :: min_pos
+            integer dimension(:),intent(inout) :: max_pos
+        end subroutine find_peaks
+    end interface 
+end python module ffind_peaks
+
+! This file was auto-generated with f2py (version:2).
+! See http://cens.ioc.ee/projects/f2py2e/

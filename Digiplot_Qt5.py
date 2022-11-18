@@ -173,6 +173,7 @@ class NavigationToolbar(NavigationToolbar2QT):
         ax.lines.remove(parent.all_plot[0])
         ax.autoscale(enable=False, axis='x', tight=True)
         ax.set_autoscaley_on(False)
+
         if parent.par['draw_lines']:
             parent.all_plot=ax.plot(tcut,Vcut, zorder=0)
         else:
@@ -561,6 +562,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["ts_Vhmin"] = 0.0
           self.par["ts_Vhmax"] = 1.0
           self.par["ts_VNbins"] = 100
+          self.par["use_npz_file"] = False # use npz data
           self.par["convert_int"] = True # integer conversion
           self.par["plot_histo_points"] = False # plot histogram data as points
           self.dt = -1.
@@ -761,6 +763,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                 ("&Show Histograms", "Plot Histograms", self.OnTSshowhistos)),
                ("&Options",
                 # ("&Unfiltered", "Use unfiltered data", self.OnNothing, 'RADIO'),
+                ("&Use npz_file", "Use npz data", self.OnToggleUsenpz_file, 'CHECK'),
                 ("&Convert Integer", "Convert raw data to int16", self.OnToggleConvertInteger, 'CHECK'),
                 (None, None, None),
                 ("&SetLimits", "Set limits for data processing", self.OnLimits, 'RADIO'),
@@ -906,8 +909,10 @@ class PlotFrame(QtWidgets.QMainWindow):
 
      def OnSelectFiles(self):
          # Create a file-open dialog in the current directory
-
-         filetypes = '*.hws'
+         if self.par['use_npz_file']:
+             filetypes = '*.npz'
+         else:
+             filetypes = '*.hws'
          # use a regular file dialog
          if self.dir == None:
              self.dir = os.getcwd()
@@ -929,94 +934,137 @@ class PlotFrame(QtWidgets.QMainWindow):
          chan_num = "%0d"%(int(self.par["Detector channel"]))
          self.stBar1.setText('Current file : %s / Channel : %s'%(self.name+self.ext, chan_num))
          # open file
-         print(("Open file : ",self.dir + self.name + self.ext))
-         self.f = h5py.File(self.dir + self.name + self.ext, 'r')
-         # get the data
-         # ee information
-         print("Get data")
-         data_root = 'wfm_group0/traces/trace' + chan_num + '/'
-         try:
-             self.t0 = self.f[data_root + 'x-axis'].attrs['start']
-             self.dt = self.f[data_root + 'x-axis'].attrs['increment']
-             # measured data
-             # scale dataset
-             self.scale = self.f[data_root + 'y-axis/scale_coef'][()]
-             # get the y dataset
-             self.nall = self.f[data_root + 'y-axis/data_vector/data'].shape[0]
-         except:
-             mb=QtWidgets.QMessageBox(self)
-             mb.setText("Problems loading data " + data_root)
-             mb.exec_()
-             return
-         self.ndata = self.nall
-         self.ti = self.t0
-         self.tf = self.t0 + (self.ndata-1)*self.dt
-         self.par["tmin"] = self.t0
-         self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
-         # WB temp solution 8/13/13
-         # set the type as 16 bit signed, this is not good the data type should come from
-         # the hdf file
-         if self.par["convert_int"]:
-              self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()].astype('int16')
-         else:
-              self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()]
+         # open files
+         if not self.par["use_npz_file"]:
+             print(("Open file : ",self.dir + self.name + self.ext))
+             self.f = h5py.File(self.dir + self.name + self.ext, 'r')
+             # get the data
+             # ee information
+             print("Get data")
+             data_root = 'wfm_group0/traces/trace' + chan_num + '/'
+             try:
+                 self.t0 = self.f[data_root + 'x-axis'].attrs['start']
+                 self.dt = self.f[data_root + 'x-axis'].attrs['increment']
+                 # measured data
+                 # scale dataset
+                 self.scale = self.f[data_root + 'y-axis/scale_coef'][()]
+                 # get the y dataset
+                 self.nall = self.f[data_root + 'y-axis/data_vector/data'].shape[0]
+             except:
+                 mb=QtWidgets.QMessageBox(self)
+                 mb.setText("Problems loading data " + data_root)
+                 mb.exec_()
+                 return
+             self.ndata = self.nall
+             self.ti = self.t0
+             self.tf = self.t0 + (self.ndata-1)*self.dt
+             self.par["tmin"] = self.t0
+             self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
+             # WB temp solution 8/13/13
+             # set the type as 16 bit signed, this is not good the data type should come from
+             # the hdf file
+             if self.par["convert_int"]:
+                  self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()].astype('int16')
+             else:
+                  self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()]
 
-         # make the time axis
-         print("Calculate data")
-         self.tall = self.t0 + self.dt*np.arange(self.ydata.shape[0], dtype = float)
-         # select the data to be worked on
-         self.f.close()
-         print("Select data")
-         self.select_data()
-         print("Done")
+             # make the time axis
+             print("Calculate data")
+             self.tall = self.t0 + self.dt*np.arange(self.ydata.shape[0], dtype = float)
+             # select the data to be worked on
+             self.f.close()
+             print("Select data")
+             self.select_data()
+             print("Done")
+         else:
+             # load npz data file
+             print(("Open npz data file : ",self.dir + self.name + self.ext))
+             self.f = np.load(self.dir + self.name + self.ext)
+             d = self.f
+             print("Get npz data")
+             self.t0 = d['time'][0]
+             self.dt = np.diff(d['time'])[0]
+             self.scale = [0.,1.]
+             self.nall = len(d['time'])
+             self.ndata = self.nall
+             self.ti = self.t0
+             self.tf = self.t0 + (self.ndata-1)*self.dt
+             self.par["tmin"] = self.t0
+             self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
+             self.tall = d['time']
+             self.ydata = d['signal']
+             print("Select data")
+             self.select_data()
+             print("Done")
 
      def OpenFile(self, fpname):
 
          self.set_file_info(fpname)
          chan_num = "%0d"%(int(self.par["Detector channel"]))
          self.stBar1.setText('Current file : %s / Channel : %s'%(self.name+self.ext, chan_num))
-         # open file
-         print(("Open file : ",self.dir + self.name + self.ext))
-         self.f = h5py.File(self.dir + self.name + self.ext, 'r')
-         # get the data
-         # time information
-         print("Get data")
-         data_root = 'wfm_group0/traces/trace' + chan_num + '/'
-         try:
-             self.t0 = self.f[data_root + 'x-axis'].attrs['start']
-             self.dt = self.f[data_root + 'x-axis'].attrs['increment']
-             # measured data
-             # scale dataset
-             self.scale = self.f[data_root + 'y-axis/scale_coef'][()]
-             # get the y dataset
-             self.nall = self.f[data_root + 'y-axis/data_vector/data'].shape[0]
-         except:
-             mb=QtWidgets.QMessageBox(self)
-             mb.setText("Problems loading data " + data_root)
-             mb.exec_()
-             return
-         self.ndata = self.nall
-         self.ti = self.t0
-         self.tf = self.t0 + (self.ndata-1)*self.dt
-         self.par["tmin"] = self.t0
-         self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
-         # WB temp solution 8/13/13
-         # set the type as 16 bit signed, this is not good the data type should come from
-         # the hdf file
-         if self.par["convert_int"]:
-              self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()].astype('int16')
+         # open files
+         if not self.par["use_npz_file"]:
+             # real data
+             print(("Open file : ",self.dir + self.name + self.ext))
+             self.f = h5py.File(self.dir + self.name + self.ext, 'r')
+             # get the data
+             # time information
+             print("Get data")
+             data_root = 'wfm_group0/traces/trace' + chan_num + '/'
+             try:
+                 self.t0 = self.f[data_root + 'x-axis'].attrs['start']
+                 self.dt = self.f[data_root + 'x-axis'].attrs['increment']
+                 # measured data
+                 # scale dataset
+                 self.scale = self.f[data_root + 'y-axis/scale_coef'][()]
+                 # get the y dataset
+                 self.nall = self.f[data_root + 'y-axis/data_vector/data'].shape[0]
+             except:
+                 mb=QtWidgets.QMessageBox(self)
+                 mb.setText("Problems loading data " + data_root)
+                 mb.exec_()
+                 return
+             self.ndata = self.nall
+             self.ti = self.t0
+             self.tf = self.t0 + (self.ndata-1)*self.dt
+             self.par["tmin"] = self.t0
+             self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
+             # WB temp solution 8/13/13
+             # set the type as 16 bit signed, this is not good the data type should come from
+             # the hdf file
+             if self.par["convert_int"]:
+                  self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()].astype('int16')
+             else:
+                  self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()]
+
+             # make the time axis
+             print("Calculate data")
+             self.tall = self.t0 + self.dt*np.arange(self.ydata.shape[0], dtype = float)
+             # select the data to be worked on
+             self.f.close()
+             print("Select data")
+             self.select_data()
+             print("Done")
          else:
-              self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()]
-
-         # make the time axis
-         print("Calculate data")
-         self.tall = self.t0 + self.dt*np.arange(self.ydata.shape[0], dtype = float)
-         # select the data to be worked on
-         self.f.close()
-         print("Select data")
-         self.select_data()
-         print("Done")
-
+             # load npz data file
+             print(("Open npz data file : ",self.dir + self.name + self.ext))
+             self.f = np.load(self.dir + self.name + self.ext)
+             d = self.f
+             print("Get npz data")
+             self.t0 = d['time'][0]
+             self.dt = np.diff(d['time'])[0]
+             self.scale =  [0.,1.]
+             self.nall = len(d['time'])
+             self.ndata = self.nall
+             self.ti = self.t0
+             self.tf = self.t0 + (self.ndata-1)*self.dt
+             self.par["tmin"] = self.t0
+             self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
+             self.tall = d['time']
+             self.ydata = d['signal']
+             print("Select data")
+             self.select_data()
+             print("Done")
 
      def OnReload(self):
          # reload data file
@@ -1190,8 +1238,12 @@ class PlotFrame(QtWidgets.QMainWindow):
           # the final value
           print("Recalculate")
           self.ndata = sl.stop - sl.start
-          self.V = self.scale[0] + self.scale[1]*self.ydata[sl]
-          self.t = self.tall[sl]
+          if not self.par['use_npz_file']:
+              self.V = self.scale[0] + self.scale[1]*self.ydata[sl]
+              self.t = self.tall[sl]
+          else:
+              self.V = self.ydata[sl]
+              self.t = self.tall[sl]
 
           print("Finished recalculation")
 
@@ -1272,7 +1324,11 @@ class PlotFrame(QtWidgets.QMainWindow):
           else:
                self.all_plot=self.my_plot(self.t[:V.shape[0]], V, '.')
           # set the proper limits
-          self.axes.set_xlim(self.t[0], self.t[:V.shape[0]][-1])
+          try:
+              self.axes.set_xlim(self.t[0], self.t[:V.shape[0]][-1])
+          except:
+              print(f'OnPlot: cannot set limits : t-shape = {self.t.shape}, V-shape = {V.shape}')
+              return
           self.axes.set_xlabel('t')
           self.axes.set_ylabel('V')
           self.figure_canvas.draw()
@@ -1657,9 +1713,11 @@ class PlotFrame(QtWidgets.QMainWindow):
                print("No power spectrum to plot")
                return
           if self.par["draw_lines"]:
-               self.axes.plot(self.fft.f,self.fft.logp)
+               #self.axes.plot(self.fft.f,self.fft.logp)
+               self.my_plot(self.fft.f,self.fft.logp)
           else:
-               self.axes.plot(self.fft.f,self.fft.logp, '.')
+               #self.axes.plot(self.fft.f,self.fft.logp, '.')
+               self.my_plot(self.fft.f,self.fft.logp, '.')
           # self.axes.set_yscale('log')
           self.axes.set_xlabel('f')
           self.axes.set_ylabel('Power')
@@ -1696,10 +1754,20 @@ class PlotFrame(QtWidgets.QMainWindow):
                               about_txt = "Select the time slot")
           pdlg.exec_()
           # now set the new parameters
-          self.par["tmin"] = float(pdlg.data[pkeys[1]])
-          self.par["tmax"] = float(pdlg.data[pkeys[2]])
+          tmin = float(pdlg.data[pkeys[1]])
+          tmax = float(pdlg.data[pkeys[2]])
           pdlg.destroy()
-
+          print(f'tmin = {tmin}, tmax = {tmax}')
+          if (tmax == tmin) :
+              print("t_min < t_max is necessary !")
+              return
+          elif(tmax < tmin):
+              print("t_min < t_max is necessary, will switch the numbers!")
+              self.par["tmin"] = tmax
+              self.par["tmax"] = tmin
+          else:
+              self.par["tmin"] = tmin
+              self.par["tmax"] = tmax
           self.select_data()
 
      def OnSetPeakpar(self):
@@ -1792,9 +1860,11 @@ class PlotFrame(QtWidgets.QMainWindow):
                print("No power spectrum to plot")
                return
           if self.par["draw_lines"]:
-               self.axes.plot(self.fft.f,self.fft.logp)
+               #self.axes.plot(self.fft.f,self.fft.logp)
+               self.all_plot = self.my_plot(self.fft.f,self.fft.logp)
           else:
-               self.axes.plot(self.fft.f,self.fft.logp, '.')
+               #self.axes.plot(self.fft.f,self.fft.logp, '.')
+               self.all_plot = self.my_plot(self.fft.f,self.fft.logp, '.')
           # self.axes.set_yscale('log')
           self.axes.set_xlabel('f')
           self.axes.set_ylabel('Power')
@@ -1807,9 +1877,11 @@ class PlotFrame(QtWidgets.QMainWindow):
                print("No power spectrum to plot")
                return
           if self.par["draw_lines"]:
-               self.axes.plot(self.fft.f,np.abs(self.fft.an))
+               #self.axes.plot(self.fft.f,np.abs(self.fft.an))
+               self.all_plot = self.my_plot(self.fft.f,np.abs(self.fft.an))
           else:
-               self.axes.plot(self.fft.f,np.abs(self.fft.an),'.')
+               #self.axes.plot(self.fft.f,np.abs(self.fft.an),'.')
+               self.all_plot = self.my_plot(self.fft.f,np.abs(self.fft.an),'.')
           self.axes.set_yscale('log')
           self.axes.set_xlabel('f')
           self.axes.set_ylabel('an')
@@ -1821,9 +1893,11 @@ class PlotFrame(QtWidgets.QMainWindow):
                print("No power spectrum to plot")
                return
           if self.par["draw_lines"]:
-               self.axes.plot(self.fft.f,np.abs(self.fft.bn))
+               # mself.axes.plot(self.fft.f,np.abs(self.fft.bn))
+               self.all_plot = self.my_plot(self.fft.f,np.abs(self.fft.bn))
           else:
-               self.axes.plot(self.fft.f,np.abs(self.fft.bn),'.')
+               #self.axes.plot(self.fft.f,np.abs(self.fft.bn),'.')
+               self.all_plot = self.my_plot(self.fft.f,np.abs(self.fft.bn),'.')
           self.axes.set_yscale('log')
           self.axes.set_xlabel('f')
           self.axes.set_ylabel('abs(bn)')
@@ -1899,6 +1973,11 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["measure"] = False
           self.par["limits"] = True
           print(("limits = ", self.par["limits"], " measure = ", self.par["measure"]))
+
+     def OnToggleUsenpz_file(self):
+          self.par["use_npz_file"] = not self.par["use_npz_file"]
+          print(("use npz data = ", self.par["use_npz_file"]))
+
 
      def OnToggleConvertInteger(self):
           self.par["convert_int"] = not self.par["convert_int"]

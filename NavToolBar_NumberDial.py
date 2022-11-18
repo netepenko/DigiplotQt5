@@ -12,7 +12,8 @@ import numpy as np
 class NavigationToolbar(NavigationToolbar2QT):
     def __init__(self, canvas, parent, coordinates=True):
         NavigationToolbar2QT.__init__(self, canvas, parent, coordinates=True)
-        self.axes = self.parent.axes
+        self.parent = parent
+        self.axes = parent.axes
         self.N = 1000
         self.t=[]
         self.V=[]

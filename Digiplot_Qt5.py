@@ -19,6 +19,9 @@ from NavToolBar_NumberDial import NavigationToolbar, NumberDialog
 import ffind_peaks as FP
 import itertools
 
+# for argument passing 
+import argparse as AG
+
 convert_int = False  
 # convert_int = True                       # added 3/3 from True to False based on LabView updates
 colors = ['red', 'green', 'blue', 'magenta', 'cyan', 'orange',
@@ -87,7 +90,9 @@ def find_peaks(yval, ystep, xval = None, \
 
 
 
-# load data
+#----------------------------------------------------------------------
+# load data functions, here more versions can be added
+#----------------------------------------------------------------------
 
 def load_gage_data(self, chan_num):
     print(("Open file : ",self.dir + self.name + self.ext))
@@ -242,9 +247,6 @@ class HistoPlotFrame(QtWidgets.QMainWindow):
           
           # add ToolBar
           self.toolbar = NavigationToolbar2QT(self.figure_canvas, self)
-#          self.toolbar.removeAction(self.toolbar.Ncontrol)
-#          self.toolbar.removeAction(self.toolbar.Nlabel)
-#          self.toolbar.removeAction(self.toolbar.refr)
           self.addToolBar(self.toolbar)
           
           
@@ -402,82 +404,19 @@ class TSPlotFrame(QtWidgets.QMainWindow):
         return ax.plot(tcut, Vcut, *rest, **kwargs)      
         
 
-#--
-## Classes for processing files selection
-#class Repository(QtWidgets.QDialog):
-#    def __init__(self, parent = None, title = 'Choose files to process', files=None):
-#          
-#        QtWidgets.QDialog.__init__(self, parent)
-#        self.parent=parent
-#        self.setWindowFlags(self.windowFlags() ^ QtCore.Qt.WindowContextHelpButtonHint)
-#        self.setWindowTitle(title)
-#        self.layout=QtWidgets.QGridLayout(self)
-#        
-#        ok=QtWidgets.QPushButton('Ok', self)
-#        ok.setDefault(True)
-#        cancel=QtWidgets.QPushButton('Cancel', self)
-#        ok.clicked.connect(self.OnOk)
-#        cancel.clicked.connect(self.OnCancel)
-#        selall=QtWidgets.QPushButton('Select All', self)
-#        selall.clicked.connect(self.OnSelectAll)
-#        desall=QtWidgets.QPushButton('Deselect All', self)
-#        desall.clicked.connect(self.OnDeselectAll)
-#          
-#        self.layout.addWidget(selall, 0, 0)
-#        self.layout.addWidget(desall, 0, 1)                
-#        self.layout.addWidget(ok, 3, 0)
-#        self.layout.addWidget(cancel, 3, 1)
-##          
-#        self.files=files
-#        self.parent=parent
-#        
-#        self.model = QtGui.QStandardItemModel()
-#        
-#        
-#        for i in files:
-#            item = QtGui.QStandardItem(i)
-#            item.setCheckable(True)
-#            self.model.appendRow(item)
-#        
-#        view=QtWidgets.QListView(parent)
-#        view.setModel(self.model)
-#        self.layout.addWidget(view, 1, 0, 2, 2)
-#        self.show()
-##
-#    def OnSelectAll(self):
-#        for index in range(self.model.rowCount()):
-#            item = self.model.item(index)
-#            if item.isCheckable() and item.checkState() == QtCore.Qt.Unchecked:
-#                item.setCheckState(QtCore.Qt.Checked)
-#
-#    def OnDeselectAll(self, event):
-#       for index in range(self.model.rowCount()):
-#            item = self.model.item(index)
-#            if item.isCheckable() and item.checkState() == QtCore.Qt.Checked:
-#                item.setCheckState(QtCore.Qt.Unchecked)
-#
-#    def OnOk(self):
-#        for index in range(self.model.rowCount()):
-#            item = self.model.item(index)
-#            if item.isCheckable() and item.checkState() == QtCore.Qt.Checked:
-#                self.parent.hwstodo.append(self.files[index])
-#        self.hide()
-#        self.parent.Process()
-#        self.destroy()
-#        
-#    def OnCancel(self):
-#         self.destroy()
+
 
 #----------------------------------------------------------------------
 # master frame, contains the plot image
 #----------------------------------------------------------------------
 class PlotFrame(QtWidgets.QMainWindow):
-     def __init__(self, parent):
+     def __init__(self, parent, key = 'PF'):
           super(PlotFrame, self).__init__()
           #QtWidgets.QMainWindow.__init__(self)
          
-          self.setWindowTitle('DigiPlot')
+          self.setWindowTitle(f'DigiPlot_{key}')
           
+          self.key = key
           # Parameters
           self.par = {}
           self.par["measure"] = True
@@ -603,37 +542,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.createMenubar()
           self.show()
 
-        
-#     def proclistload(self): #load list of processed files
-#        path_to_watch = self.datadir
-#        dircont = os.listdir (path_to_watch)
-#                
-#        if "ProcFiles.data" in dircont:
-#            print "\nLoad list of already processed files."
-#            fopen = open(self.datadir+"//ProcFiles.data")
-#            self.hwsproc=[x.strip('\n') for x in fopen.readlines()]
-#            
-#        else: 
-#            self.hwsproc=[]
-#            print "\nNo files were processed yet in current data directory."
-                
-#     def proclistsave(self): #save list of processed files
-#        path_to_watch = self.datadir
-#        dircont = os.listdir (path_to_watch)
-#                
-#        if "ProcFiles.data" in dircont:
-#            print "\nAppend list of processed files."
-#            fopen = open(self.datadir+"//ProcFiles.data", 'a')
-#            for item in self.hwsproc:
-#                fopen.write("%s\n" % item)
-#            fopen.close()
-#        else: 
-#            fopen = open(self.datadir+"//ProcFiles.data", 'w')
-#            for item in self.hwsproc:
-#                fopen.write("%s\n" % item)
-#            fopen.close()
-#            print "\nCreate list of processed files."
-         
+                 
          
      def menuData(self): # data for the menu
           return(
@@ -870,7 +779,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                          if item.text() == "":
                               continue
                          else:
-                              key = item.text().strip()[1:]
+                              key = item.text().split('&')[-1].strip()   # use only last part
                               item_dict[key] = item
           # set the values for the options menu
           if item_dict != {}:
@@ -1043,7 +952,9 @@ class PlotFrame(QtWidgets.QMainWindow):
           print("Closing All")
           self.destroy()
           # self.parent.quit()
-          QtCore.QCoreApplication.instance().exit()
+          frames.pop(self.key)
+          if frames == {}:
+              QtCore.QCoreApplication.instance().exit()
           # all done
      def closeEvent(self, event):
          self.OnCloseWindow()
@@ -1052,7 +963,7 @@ class PlotFrame(QtWidgets.QMainWindow):
      # Action menu routines   
      #----------------------------------------------------------------------
      def OnPlot(self):
-          if (self.par['Detector channel'] in self.toolbar.ch_n) and (self.name[-6:] in self.toolbar.fn):
+          if (self.par['Detector channel'] ==  self.toolbar.ch_n) and (self.name[-6:] == self.toolbar.fn):
               return
           V = None
           if self.par["filtered"]:
@@ -1062,10 +973,10 @@ class PlotFrame(QtWidgets.QMainWindow):
           if (self.t is None) or (V is None):
                print("Nothing to plot !")
                return           
-          self.toolbar.t.append(self.t)
-          self.toolbar.V.append(V)
-          self.toolbar.ch_n.append(self.par['Detector channel'])
-          self.toolbar.fn.append(self.name[-6:])
+          self.toolbar.t = self.t
+          self.toolbar.V = V
+          self.toolbar.ch_n = self.par['Detector channel']
+          self.toolbar.fn = self.name[-6:]
         
           self.toolbar.thinning()
 
@@ -1789,31 +1700,28 @@ class PlotFrame(QtWidgets.QMainWindow):
 #----------------------------------------------------------------------
 # main program
 #----------------------------------------------------------------------
-def RatesForAlS(app, chnum):
-         fobj=PlotFrame(app)
-         fobj.LoadParameters("C://Users//Alex//Desktop//par.data")
-         fobj.OpenFile("C://Users//Alex//Desktop//DAQ_190813-112521.hws")
-         fobj.OnTScalc()
-         fobj.OnTSfindpeaks()
-         if (fobj.ts_av is None) or (fobj.ts_counts is None):
-               print("Nothing to plot !")
-               return
-         rate = fobj.ts_counts/fobj.par["ts_width"]
-         rate_err = np.sqrt(fobj.ts_counts)/fobj.par["ts_width"]
-         pl.errorbar(fobj.ts_av, rate, yerr = rate_err, marker='o', ls = 'None')
-         fobj.destroy()
+
          
 if __name__ == '__main__':
+    parser = AG.ArgumentParser()
+    parser.add_argument('-c', '--channels', help="list of channel names for which a window will be opened. Separate the names with a / e.g. ch1/ch2/ch3 (no spaces)", default = 'one_channel')
+    args = parser.parse_args()
     #Create App
-    
+    # check if app already exists
     app = QtCore.QCoreApplication.instance()
     
     if app is None:
+        # if not create it
         app = QtWidgets.QApplication(sys.argv)
     
-    #Create PlotFrame in App
-    frame = PlotFrame(app) 
+    # add PlotFrames to app
     
+    frame_names = args.channels.split('/')
+    
+    plot_frames = [PlotFrame(app, key = k) for k in frame_names]
+    
+    frames = dict(zip(frame_names, plot_frames))
+
     sys.exit(app.exec_())
      
      

@@ -87,8 +87,117 @@ def find_peaks(yval, ystep, xval = None, \
 
 
 
+# load data
+
+def load_gage_data(self, chan_num):
+    print(("Open file : ",self.dir + self.name + self.ext))
+    self.f = h5py.File(self.dir + self.name + self.ext, 'r')
+    # load gage digitizer data
+    data_root = 'wfm_group0/traces/trace' + chan_num + '/'
+    xaxis_access = data_root + 'x-axis'
+    self.t0 = self.f[xaxis_access].attrs['start']
+    self.dt = self.f[xaxis_access].attrs['increment']
+    # measured data
+    # scale dataset
+    yaxis_scale_access = data_root + 'y-axis/scale_coef'
+    yaxis_data_access = data_root + 'y-axis/data_vector/data'
+    # there are 2 values now
+    #self.scale = self.f[yaxis_scale_access].value
+    self.scale = self.f[yaxis_scale_access][0]
+    # get the y dataset
+    self.nall = self.f[yaxis_data_access].shape[0]         
+    self.ndata = self.nall
+    self.ti = self.t0
+    self.tf = self.t0 + (self.ndata-1)*self.dt        
+    
+    # WB temp solution 8/13/13
+    # set the type as 16 bit signed, this is not good the data type should come from
+    # the hdf file
+    if convert_int:
+         self.ydata = self.f[data_root + 'y-axis/data_vector/data'].astype('int16')[:]
+    else:
+         self.ydata = self.f[data_root + 'y-axis/data_vector/data'][:]
+         
+    #added on 3/3/2021              
+    for i, yd in enumerate(self.ydata[:10]):
+        print(f'i = {i}, ydata = {yd}')
+        
+    #added on 12/21/2020:(oscillosope gives different peaks)    
+    self.y_max = self.f[data_root + 'measurements/y_maximum'].attrs['value']
+    
+    # make the time axis
+    print("Calculate data")
+    self.tall = self.t0 + self.dt*np.arange(self.ydata.shape[0], dtype = float)
+    # select the data to be worked on
+    self.f.close()
+    print("Select data")
+    self.select_data()
 
 
+def load_NI_data(self, chan_num):
+    print(("Open file : ",self.dir + self.name + self.ext))
+    self.f = h5py.File(self.dir + self.name + self.ext, 'r')
+    # get the data
+    # ee information
+    print("Get data")
+    data_root = 'wfm_group0/traces/trace' + chan_num + '/'
+    try:
+        self.t0 = self.f[data_root + 'x-axis'].attrs['start']
+        self.dt = self.f[data_root + 'x-axis'].attrs['increment']
+        # measured data
+        # scale dataset
+        self.scale = self.f[data_root + 'y-axis/scale_coef'][()]
+        # get the y dataset
+        self.nall = self.f[data_root + 'y-axis/data_vector/data'].shape[0]
+    except:
+        mb=QtWidgets.QMessageBox(self)
+        mb.setText("Problems loading data " + data_root)
+        mb.exec_()
+        return
+    self.ndata = self.nall
+    self.ti = self.t0
+    self.tf = self.t0 + (self.ndata-1)*self.dt
+    self.par["tmin"] = self.t0
+    self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
+    # WB temp solution 8/13/13
+    # set the type as 16 bit signed, this is not good the data type should come from
+    # the hdf file
+    if self.par["convert_int"]:
+         self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()].astype('int16')
+    else:
+         self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()]
+    
+    # make the time axis
+    print("Calculate data")
+    self.tall = self.t0 + self.dt*np.arange(self.ydata.shape[0], dtype = float)
+    # select the data to be worked on
+    self.f.close()
+    print("Select data")
+    self.select_data()
+    print("Done")
+    
+
+def load_npz_data(self, chan_num):
+    # load npz data file
+    print(("Open npz data file : ",self.dir + self.name + self.ext))
+    self.f = np.load(self.dir + self.name + self.ext)
+    d = self.f
+    print("Get npz data")
+    self.t0 = d['time'][0]
+    self.dt = np.diff(d['time'])[0]
+    self.scale = [0.,1.]
+    self.nall = len(d['time'])
+    self.ndata = self.nall
+    self.ti = self.t0
+    self.tf = self.t0 + (self.ndata-1)*self.dt
+    self.par["tmin"] = self.t0
+    self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
+    self.tall = d['time']
+    self.ydata = d['signal']
+    print("Select data")
+    self.select_data()
+    print("Done")
+   
 
 #----------------------------------------------------------------------
 # plot frame, for histograms
@@ -398,6 +507,8 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["ts_Vhmax"] = 1.0
           self.par["ts_VNbins"] = 100
           self.par["use_npz_file"] = False # use npz data
+          self.par["use_NI_file"] = True # use NI digitizer data
+          self.par["use_GaGe_file"] = False # use Gage digitizer data
           self.par["convert_int"] = True # integer conversion
           self.par["plot_histo_points"] = False # plot histogram data as points
           
@@ -527,7 +638,7 @@ class PlotFrame(QtWidgets.QMainWindow):
      def menuData(self): # data for the menu
           return(
                ("&File",                                        # menu label
-                ("&Open", "Select data files", self.OnSelectFiles),  # menu items consisting of: label, text, handler
+                ("&Open", "Select data files", self.OnSelectFile),  # menu items consisting of: label, text, handler
                 ("&Reload", "Reload data files", self.OnReload),  
                 ("&Load Parameters", "Load parameters", self.OnLoadParameters), 
                 ("&Save Parameters", "Save parameters", self.OnSaveParameters), 
@@ -582,12 +693,14 @@ class PlotFrame(QtWidgets.QMainWindow):
                 ("&Delete Histograms", "delete all histograms", self.OnDeleteHistogram),
                 ("&Show Histograms", "Plot Histograms", self.OnTSshowhistos)),
                ("&Options",
-                # ("&Unfiltered", "Use unfiltered data", self.OnNothing, 'RADIO'),
-                ("&Use npz_file", "Use npz data", self.OnToggleUsenpz_file, 'CHECK'),
+                ("&Use npz file", "Use npz data", self.OnUsenpz_file, 'RADIO', 'filetypes'),
+                ("&Use NI file", "Use NI data", self.OnUseNI_file, 'RADIO', 'filetypes'),
+                ("&Use GaGe file", "Use Gage data", self.OnUseGaGe_file, 'RADIO', 'filetypes'), 
+                (None, None, None),
                 ("&Convert Integer", "Convert raw data to int16", self.OnToggleConvertInteger, 'CHECK'),
                 (None, None, None),
-                ("&SetLimits", "Set limits for data processing", self.OnLimits, 'RADIO'),
-                ("&Measure", "Measure differences in t and V", self.OnMeasure, 'RADIO'),
+                ("&SetLimits", "Set limits for data processing", self.OnLimits, 'RADIO', 'rect'),
+                ("&Measure", "Measure differences in t and V", self.OnMeasure, 'RADIO', 'rect'),
                 ("&Use Limits ", "Use filtered data", self.OnTogglelimits, 'CHECK'),
                 ("&Plot Lines ", "Draw lines or Points", self.OnToggleLines, 'CHECK'),
                 (None, None, None),
@@ -598,45 +711,54 @@ class PlotFrame(QtWidgets.QMainWindow):
                )
                
      def createMenubar(self):
-         group=QtWidgets.QActionGroup(self) 
-         for eachMenuData in self.menuData():
-               
-              menuLabel = eachMenuData[0]
-              menuItems = eachMenuData[1:]
-               
-
-              menu = QtWidgets.QMenu(menuLabel, self)
-              for eachItem in menuItems:
-                   if not eachItem[0]:
+        groups = {}
+        for eachMenuData in self.menuData():
+              
+             menuLabel = eachMenuData[0]
+             menuItems = eachMenuData[1:]
+              
+             menu = QtWidgets.QMenu(menuLabel, self)
+             for eachItem in menuItems:
+                  if not eachItem[0]:
                        menu.addSeparator()
                        continue
-                   subMenu=QtWidgets.QAction(eachItem[0],self) 
-                   if len(eachItem) == 4: #never true
-                        if eachItem[3]=='CHECK' or eachItem[3]=='RADIO':
-                            subMenu.setCheckable(True)
-                        if eachItem[3]=='RADIO':
-                            subMenu.setActionGroup(group)
-                            
-                   
-                   if 'Measure' in eachItem[0]: subMenu.setChecked(self.par['measure'])
-                   if 'Convert Integer' in eachItem[0]: subMenu.setChecked(self.par['convert_int'])                   
-                   if 'SetLimits' in eachItem[0]: subMenu.setChecked(self.par['limits'])
-                   if 'Use Limits' in eachItem[0]: subMenu.setChecked(self.par['use_limits'])
-                   if 'Plot Lines' in eachItem[0]: subMenu.setChecked(self.par['draw_lines'])
-                   if 'Auto Histogram' in eachItem[0]: subMenu.setChecked(self.par['auto_histo'])
-                   if 'Histogram Points' in eachItem[0]: subMenu.setChecked(self.par['plot_histo_points'])
-                   if 'Filtered' in eachItem[0]: subMenu.setChecked(self.par['filtered'])
+                  subMenu=QtWidgets.QAction(eachItem[0],self) 
+                 
+                  if len(eachItem) == 4:       
+                       if eachItem[3]=='CHECK':
+                           subMenu.setCheckable(True)
+        
+                  if len(eachItem) == 5:   # item has a group assignment
+                       groupName = eachItem[-1]
+                       if groupName in list(groups.keys()):
+                           pass
+                       else:
+                           groups[groupName] = QtWidgets.QActionGroup(self)
+                       if eachItem[3]=='RADIO':
+                           subMenu.setCheckable(True)
+                           subMenu.setActionGroup(groups[groupName])
+                                                    
+                  # set initial checks
+                  if 'Convert Integer' in eachItem[0]: subMenu.setChecked(self.par['convert_int'])         
+                  if 'Measure' in eachItem[0]: subMenu.setChecked(self.par['measure'])           
+                  if 'SetLimits' in eachItem[0]: subMenu.setChecked(self.par['limits'])
+                  if 'Use Limits' in eachItem[0]: subMenu.setChecked(self.par['use_limits'])
+                  if 'Plot Lines' in eachItem[0]: subMenu.setChecked(self.par['draw_lines'])
+                  if 'Auto Histogram' in eachItem[0]: subMenu.setChecked(self.par['auto_histo'])
+                  if 'Histogram Points' in eachItem[0]: subMenu.setChecked(self.par['plot_histo_points'])
+                  if 'Filtered' in eachItem[0]: subMenu.setChecked(self.par['filtered'])
+                  if 'Use npz file' in eachItem[0]: subMenu.setChecked(self.par['use_npz_file'])
+                  if 'Use NI file' in eachItem[0]: subMenu.setChecked(self.par['use_NI_file'])
+                  if 'Use GaGe file' in eachItem[0]: subMenu.setChecked(self.par['use_GaGe_file'])
+                     
                       
-                       
-                   subMenu.triggered.connect(eachItem[2])
-                   menu.addAction(subMenu)
-                   
-              
-              
-              self.mbar.addMenu(menu)          
-          
-
- 
+                  subMenu.triggered.connect(eachItem[2])
+                  menu.addAction(subMenu)
+                  
+             
+             
+             self.mbar.addMenu(menu)
+             
           
 
      def set_file_info(self,filename):
@@ -647,55 +769,6 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.ext = ext
           # that's it
 
-     #----------------------------------------------------------------------
-     # File menu routines   
-     #----------------------------------------------------------------------
-#     def OnScan(self): #scan for new files in data directory
-#        path_to_watch = self.datadir
-#        before = self.hwsproc
-#        after = os.listdir (path_to_watch)
-#        newf = False
-#        self.hwsnew = []
-#        for f in after:
-#            if f.endswith(".hws") and not f in before:
-#                print "Unprocessed file -- ", f
-#                newf = True
-#                self.hwsnew.append(f)
-#        print "Directory scanned for unprocessed .hws files \n"    
-#        if newf: 
-#            self.repo=Repository(self, 'Select files to process', self.hwsnew)
-#        else: print 'No unprocessed files found'           
-#                #print self.choosefiles
-                
-    
-     #process selected files           
-    
-#     def Process(self): 
-#        start_time=time.time()
-#        for f in self.hwstodo:
-#                
-#                #self.LoadParameters("C://Users//plasma//Desktop//par.data")
-#                #self.OnPlot(None)
-#                for i in range(0,1):
-#                    self.OnFindPeaks()
-#                    self.OnHistogram()
-#                    os.mkdir(self.dir+self.name+'//')
-#                    self.histoframe.figure.savefig(self.dir+self.name+'//Histogram_ch'+str(i)+'.png')
-#                
-#                self.RatesForAllChan(f)
-#                self.figure.savefig(self.dir+self.name+'//RatePlot.png')
-#                self.hwsproc.append(f)
-#                self.OnTShistogram()
-##                for i,h in enumerate(self.histos):
-##                    h_file = self.dir + self.name +'//histo_{0}.data'.format(i)
-##                    h.save(h_file)
-##                print " all histograms saved"
-#        self.proclistsave()
-##        print self.hwstodo
-#        self.hwstodo = []                
-#        end_time=time.time()
-#        work_time=end_time-start_time
-#        print "Elapsed time ", work_time 
         
      def RatesForAllChan(self,ftw):
          self.OnClear()
@@ -713,256 +786,57 @@ class PlotFrame(QtWidgets.QMainWindow):
              self.OnTSplotrate()
      
              
-#     def OnSetScanDir(self):
-#         
-#         print "Set data directory"
-#         dir_dlg=QtWidgets.QFileDialog.getExistingDirectory(self, 'Select a directory')
-#         if dir_dlg != '':
-#             # User has selected something, get the path, set the window's title to the path
-#             # store relevant file information
-#             self.datadir = dir_dlg
-#         else:
-#             print "so, you changed your mind, I will do nothing"
-#             return
-#         print 'Data directory: ', self.datadir
-#         #self.proclistload()
                     
-     def OnSelectFiles(self):
-         # Create a file-open dialog in the current directory
-         if self.par['use_npz_file']:
-             filetypes = '*.npz'
-         else:
-             filetypes = '*.hws'         
-         # use a regular file dialog
-         if self.dir == None:
-             self.dir = os.getcwd()
-             
-         file_dlg=QtWidgets.QFileDialog.getOpenFileName(self, 'Select a file', self.dir, filetypes )
-         
-         if file_dlg[0] != '':
-             # User has selected something, get the path, set the window's title to the path
-             filename=file_dlg[0]
-             # store relevant file information
-             self.OpenFile(filename)
-         else:
-             print("so, you changed your mind, I will do nothing")
-             filename = None
-             return
-         
-          # get channel number
-         chan_num = "%0d"%(int(self.par["Detector channel"]))
-         self.stBar1.setText('Current file : %s / Channel : %s'%(self.name+self.ext, chan_num))
-         # open file
-         # open files
-         if not self.par["use_npz_file"]:
-             print(("Open file : ",self.dir + self.name + self.ext))
-             self.f = h5py.File(self.dir + self.name + self.ext, 'r')
-             # get the data
-             # ee information
-             print("Get data")
-             data_root = 'wfm_group0/traces/trace' + chan_num + '/'
-             try:
-                 self.t0 = self.f[data_root + 'x-axis'].attrs['start']
-                 self.dt = self.f[data_root + 'x-axis'].attrs['increment']
-                 # measured data
-                 # scale dataset
-                 self.scale = self.f[data_root + 'y-axis/scale_coef'][()]
-                 # get the y dataset
-                 self.nall = self.f[data_root + 'y-axis/data_vector/data'].shape[0]
-             except:
-                 mb=QtWidgets.QMessageBox(self)
-                 mb.setText("Problems loading data " + data_root)
-                 mb.exec_()
-                 return
-             self.ndata = self.nall
-             self.ti = self.t0
-             self.tf = self.t0 + (self.ndata-1)*self.dt
-             self.par["tmin"] = self.t0
-             self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
-             # WB temp solution 8/13/13
-             # set the type as 16 bit signed, this is not good the data type should come from
-             # the hdf file
-             if self.par["convert_int"]:
-                  self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()].astype('int16')
-             else:
-                  self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()]
-             # make the time axis
-             print("Calculate data")
-             self.tall = self.t0 + self.dt*np.arange(self.ydata.shape[0], dtype = float)
-             # select the data to be worked on
-             self.f.close()
-             print("Select data")
-             self.select_data()
-             print("Done")
-         else:
-             # load npz data file
-             print(("Open npz data file : ",self.dir + self.name + self.ext))
-             self.f = np.load(self.dir + self.name + self.ext)
-             d = self.f
-             print("Get npz data")
-             self.t0 = d['time'][0]
-             self.dt = np.diff(d['time'])[0]
-             self.scale = [0.,1.]
-             self.nall = len(d['time'])
-             self.ndata = self.nall
-             self.ti = self.t0
-             self.tf = self.t0 + (self.ndata-1)*self.dt
-             self.par["tmin"] = self.t0
-             self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
-             self.tall = d['time']
-             self.ydata = d['signal']
-             print("Select data")
-             self.select_data()
-             print("Done")
-         
- 
-     def OpenFile(self, fpname):
-         self.set_file_info(fpname)
-         chan_num = "%0d"%(int(self.par["Detector channel"]))
-         self.stBar1.setText('Current file : %s / Channel : %s'%(self.name+self.ext, chan_num))
-         # open files
-         if not self.par["use_npz_file"]:
-             # real data
-             print(("Open file : ",self.dir + self.name + self.ext))
-             self.f = h5py.File(self.dir + self.name + self.ext, 'r')
-             # get the data
-             # time information
-             print("Get data")
-             data_root = 'wfm_group0/traces/trace' + chan_num + '/'
-             try:
-                 self.t0 = self.f[data_root + 'x-axis'].attrs['start']
-                 self.dt = self.f[data_root + 'x-axis'].attrs['increment']
-                 # measured data
-                 # scale dataset
-                 self.scale = self.f[data_root + 'y-axis/scale_coef'][()]
-                 # get the y dataset
-                 self.nall = self.f[data_root + 'y-axis/data_vector/data'].shape[0]
-             except:
-                 mb=QtWidgets.QMessageBox(self)
-                 mb.setText("Problems loading data " + data_root)
-                 mb.exec_()
-                 return
-             self.ndata = self.nall
-             self.ti = self.t0
-             self.tf = self.t0 + (self.ndata-1)*self.dt
-             self.par["tmin"] = self.t0
-             self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
-             # WB temp solution 8/13/13
-             # set the type as 16 bit signed, this is not good the data type should come from
-             # the hdf file
-             if self.par["convert_int"]:
-                  self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()].astype('int16')
-             else:
-                  self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()]
-             # make the time axis
-             print("Calculate data")
-             self.tall = self.t0 + self.dt*np.arange(self.ydata.shape[0], dtype = float)
-             # select the data to be worked on
-             self.f.close()
-             print("Select data")
-             self.select_data()
-             print("Done")
-         else:
-             # load npz data file
-             print(("Open npz data file : ",self.dir + self.name + self.ext))
-             self.f = np.load(self.dir + self.name + self.ext)
-             d = self.f
-             print("Get npz data")
-             self.t0 = d['time'][0]
-             self.dt = np.diff(d['time'])[0]
-             self.scale =  [0.,1.]
-             self.nall = len(d['time'])
-             self.ndata = self.nall
-             self.ti = self.t0
-             self.tf = self.t0 + (self.ndata-1)*self.dt
-             self.par["tmin"] = self.t0
-             self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
-             self.tall = d['time']
-             self.ydata = d['signal']
-             print("Select data")
-             self.select_data()
-             print("Done")
-         self.OnLoad()
-         self.select_data()
-         print("Done")
+     def OnSelectFile(self):
+        # Create a file-open dialog in the current directory
+        if self.par['use_npz_file']:
+            filetypes = '*.npz'
+        else:
+            filetypes = '*.hws'         
+        # use a regular file dialog
+        if self.dir == None:
+            self.dir = os.getcwd()
+            
+        file_dlg=QtWidgets.QFileDialog.getOpenFileName(self, 'Select a file', self.dir, filetypes )
+        
+        if file_dlg[0] != '':
+            # User has selected something, get the path, set the window's title to the path
+            filename=file_dlg[0]
+            # store relevant file information
+            self.set_file_info(filename)
+            self.load_data()
+            self.select_data()
+            print("Done")
+        else:
+            print("so, you changed your mind, I will do nothing")
+            filename = None
+            return
+        
 
-     def OnLoad(self):
+     def load_data(self):
          # reload data file
          # get channel number         
          chan_num = "%0d"%(int(self.par["Detector channel"]))
          self.stBar1.setText('Current file : %s / Channel : %s'%(self.name+self.ext, chan_num))
-         # open file
-         print("Open file : ",self.dir + self.name + self.ext)
-         self.f = h5py.File(self.dir + self.name + self.ext, 'r')
-         # get the data
-         # time information
+         # get the data according to the data file type
          print("Get data")
-         data_root = 'wfm_group0/traces/trace' + chan_num + '/'
-         """
          try:
-             xaxis_access = data_root + 'x-axis'
-             self.t0 = self.f[xaxis_access].attrs['start']
-             self.dt = self.f[xaxis_access].attrs['increment']
-             # measured data
-             # scale dataset
-             yaxis_scale_access = data_root + 'y-axis/scale_coef'
-             yaxis_data_access = data_root + 'y-axis/data_vector/data'
-             # there are 2 values now
-             # self.scale = self.f[yaxis_scale_access].value
-             self.scale = self.f[yaxis_scale_access][0]
-             # get the y dataset
-             self.nall = self.f[yaxis_data_access].shape[0]
-         except:
-             print(f'Problem with : {xaxis_access}\n, or {yaxis_scale_access}\n or  {yaxis_data_access}')
-             mb=QtWidgets.QMessageBox(self)
-             mb.setText("Problems loading data " + xaxis_access)
-             mb.exec_()
+             if self.par["use_GaGe_file"]:   
+                 load_gage_data(self, chan_num)
+             elif self.par["use_NI_file"]:
+                 load_NI_data(self, chan_num)
+             elif self.par["use_npz_file"]:
+                 load_npz_data(self, chan_num)
+         except Exception as err:
+             print(f'Cannot load data from {self.f}: {err}')
              return
-         """
-         xaxis_access = data_root + 'x-axis'
-         self.t0 = self.f[xaxis_access].attrs['start']
-         self.dt = self.f[xaxis_access].attrs['increment']
-         # measured data
-         # scale dataset
-         yaxis_scale_access = data_root + 'y-axis/scale_coef'
-         yaxis_data_access = data_root + 'y-axis/data_vector/data'
-         # there are 2 values now
-         #self.scale = self.f[yaxis_scale_access].value
-         self.scale = self.f[yaxis_scale_access][0]
-         # get the y dataset
-         self.nall = self.f[yaxis_data_access].shape[0]         
-         self.ndata = self.nall
-         self.ti = self.t0
-         self.tf = self.t0 + (self.ndata-1)*self.dt        
          
-         # WB temp solution 8/13/13
-         # set the type as 16 bit signed, this is not good the data type should come from
-         # the hdf file
-         if  self.par["convert_int"]:
-              self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()].astype('int16')
-         else:
-              self.ydata = self.f[data_root + 'y-axis/data_vector/data'][()]
-              
-         #added on 3/3/2021              
-         for i, yd in enumerate(self.ydata[:10]):
-             print(f'i = {i}, ydata = {yd}')
-             
-         #added on 12/21/2020:(oscillosope gives different peaks)    
-         self.y_max = self.f[data_root + 'measurements/y_maximum'].attrs['value']
          
-         # make the time axis
-         print("Calculate data")
-         self.tall = self.t0 + self.dt*np.arange(self.ydata.shape[0], dtype = float)
-         # select the data to be worked on
-         self.f.close()
-         print("Select data")
-     
      def OnReload(self):
-         self.OnLoad()
-         self.select_data()
+         self.load_data()
+         # self.select_data()
          print("Done")
          
-
          
      def OnLoadParameters(self):
           # Create a file-open dialog in the current directory
@@ -1008,6 +882,10 @@ class PlotFrame(QtWidgets.QMainWindow):
                item_dict['Histogram Points'].setChecked(self.par['plot_histo_points']);print(("Plot Histogram Points = ", self.par["plot_histo_points"]))
                item_dict["Filtered"].setChecked(self.par["filtered"]); print("Filtered = ", self.par["filtered"])
                item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print("draw_lines = ", self.par["draw_lines"])
+               item_dict['Use npz file'].setChecked(self.par['use_npz_file']); print("use_npz_file = ", self.par['use_npz_file'])
+               item_dict['Use NI file'].setChecked(self.par['use_NI_file']); print("use_NI_file = ", self.par['use_NI_file'])
+               item_dict['Use GaGe file'].setChecked(self.par['use_GaGe_file']); print("use_GaGe_file = ", self.par['use_GaGe_file'])
+
           self.select_data()
           # all done
           
@@ -1043,6 +921,9 @@ class PlotFrame(QtWidgets.QMainWindow):
                item_dict['Histogram Points'].setChecked(self.par['plot_histo_points']);print(("Plot Histogram Points = ", self.par["plot_histo_points"]))
                item_dict["Filtered"].setChecked(self.par["filtered"]); print(("Filtered = ", self.par["filtered"]))
                item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print(("draw_lines = ", self.par["draw_lines"]))
+               item_dict['Use npz file'].setChecked(self.par['use_npz_file']); print("use_npz_file = ", self.par['use_npz_file'])
+               item_dict['Use NI file'].setChecked(self.par['use_NI_file']); print("use_NI_file = ", self.par['use_NI_file'])
+               item_dict['Use GaGe file'].setChecked(self.par['use_GaGe_file']); print("use_GaGe_file = ", self.par['use_GaGe_file'])
           self.select_data()
           # all done
           
@@ -1079,7 +960,10 @@ class PlotFrame(QtWidgets.QMainWindow):
 
      def select_data(self):
           # select data range to work on
-          # debuggin
+          if not hasattr(self, "tall"):
+              print(f'No data !')
+              return
+          # debugging
           if self.ndata == 0:
                return
           if (self.par["tmin"] < self.tall[0]):
@@ -1091,7 +975,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           # the final value
           print("Recalculate")
           self.ndata = sl.stop - sl.start
-          if not self.par['use_npz_file']:
+          if self.par['use_NI_file']:
               self.V = self.scale[0] + self.scale[1]*self.ydata[sl]
               self.t = self.tall[sl]
           else:
@@ -1268,12 +1152,14 @@ class PlotFrame(QtWidgets.QMainWindow):
          print ('FWHM = ', h.sigma.value*2.355)
          self.histoframe.figure_canvas.draw()
          # new histo with finer binning
-         h = B.histo(self.V_peak, range=(cmin*0.9, cmax*1.1), bins= int(self.par["VNbins"]))
-         h.title = 'FWHM = {:.3e}, Position = {:.3e}, Resolution = {:.2e}%'.format(fwhm, pos, res)
-         h.fit(cmin, cmax, plot_fit = False)
-         h.plot()
-         h.plot_fit()
-
+         hn = B.histo(self.V_peak, range=(cmin*0.9, cmax*1.1), bins= int(self.par["VNbins"]))
+         self.histos.append( hn )
+         hn.title = 'FWHM = {:.3e}, Position = {:.3e}, Resolution = {:.2e}%'.format(fwhm, pos, res)
+         hn.fit(cmin, cmax, plot_fit = False)
+         hn.plot()
+         hn.plot_fit()
+         latest_histo = len(self.histos) - 1
+         self.show_histos(latest_histo)
     
      def OnDeleteHistogram(self):
           self.histos = []
@@ -1328,8 +1214,10 @@ class PlotFrame(QtWidgets.QMainWindow):
                self.histoframe.axes = self.histoframe.figure.add_subplot(111)
           if self.par['plot_histo_points']:
               self.histos[n].plot_exp(axes = self.histoframe.axes, ignore_zeros = True)
+              self.histos[n].plot_fit(axes = self.histoframe.axes, ignore_zeros = True)
           else:
               self.histos[n].plot(axes = self.histoframe.axes)
+              self.histos[n].plot_fit(axes = self.histoframe.axes)
           self.histoframe.figure_canvas.draw()
           
 
@@ -1453,7 +1341,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           f1.axes[0].fill_between(self.ts_av, rate-rate_err, rate+rate_err, alpha=0.3, color=colors[self.par['Detector channel']])
           f1.axes[0].set_xlabel('t [s]')
           f1.axes[0].set_ylabel('Rate [Hz]')
-          f1.draw()
+          f1.show()
           
           # pl.locator_params(axis='x', nbins=30)
 
@@ -1610,7 +1498,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           pdlg.destroy()
           
           self.OnReload()
-          #self.OnPlot()
+
 
      def OnSelectTimeSlot(self):
           # show and change the parameters
@@ -1842,9 +1730,29 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["limits"] = True
           print(("limits = ", self.par["limits"], " measure = ", self.par["measure"]))
 
-     def OnToggleUsenpz_file(self):
-          self.par["use_npz_file"] = not self.par["use_npz_file"]
+     def OnUsenpz_file(self):
+          self.par["use_npz_file"] = True
+          self.par["use_NI_file"] = False
+          self.par["use_GaGe_file"] = False
           print(("use npz data = ", self.par["use_npz_file"]))
+          print(("use NI data = ", self.par["use_NI_file"]))
+          print(("use GaGe data = ", self.par["use_GaGe_file"]))
+          
+     def OnUseNI_file(self):
+          self.par["use_npz_file"] = False
+          self.par["use_NI_file"] = True
+          self.par["use_GaGe_file"] = False
+          print(("use npz data = ", self.par["use_npz_file"]))
+          print(("use NI data = ", self.par["use_NI_file"]))
+          print(("use GaGe data = ", self.par["use_GaGe_file"]))
+
+     def OnUseGaGe_file(self):
+          self.par["use_npz_file"] = False
+          self.par["use_NI_file"] = False
+          self.par["use_GaGe_file"] = True
+          print(("use npz data = ", self.par["use_npz_file"]))
+          print(("use NI data = ", self.par["use_NI_file"]))
+          print(("use GaGe data = ", self.par["use_GaGe_file"]))
 
      def OnToggleConvertInteger(self):
           self.par["convert_int"] = not self.par["convert_int"]

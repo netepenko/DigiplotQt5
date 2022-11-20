@@ -2,7 +2,9 @@
 """
 Created on Sat Mar 09 16:14:31 2019
 
-@author: Alex
+
+
+@author: Alex, WB
 """
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -12,12 +14,13 @@ import numpy as np
 class NavigationToolbar(NavigationToolbar2QT):
     def __init__(self, canvas, parent, coordinates=True):
         NavigationToolbar2QT.__init__(self, canvas, parent, coordinates=True)
-        self.axes = self.parent.axes
+        self.parent = parent
+        self.axes = parent.axes
         self.N = 1000
         self.t=[]
         self.V=[]
-        self.ch_n=[]
-        self.fn=[]
+        self.ch_n=0
+        self.fn='' # fila name array
         self.Ncontrol= QtWidgets.QLineEdit(self)
         self.Ncontrol.setValidator(QtGui.QIntValidator(self.Ncontrol))
         self.Ncontrol.setFixedWidth(50)
@@ -66,44 +69,41 @@ class NavigationToolbar(NavigationToolbar2QT):
     #rescale and replot
     # this function drops unnecessary ponts in ploting region to reduce
     # plotting delays, but keeps everything above threshold to see peaks
+    
     def thinning(self):
-        all_plot_new=[]
-        self.axes=self.parent.axes
-        ax=self.axes
+        # get current axes
+        self.axes = self.parent.axes
+        ax = self.axes
+
+        # get current axes limits
         (xmin, xmax)=ax.get_xlim()
         (ymin, ymax)=ax.get_ylim()
-        rng=xmax-xmin
-        Vc=np.array([])
-        for i in range(len(self.t)):
-            
-            if i>0 and self.fn[i]!=self.fn[i-1]: self.mker=next(self.markers)
-            t=self.t[i]
-            V=self.V[i]
-    #        if (xmin- 1*rng)<t[0] or (xmax+1*rng)>t[-1]:
-    #            k= (-max(xmin-1*rng, t[0])+min(t[-1], xmax+1*rng))/(xmax-xmin)
-    #        else: k=3 # 1 +/-1 reagions to the siedes (for dragging thing)
-            #get original data which is in plotting region
-            org_points=np.where(((xmin - 1*rng) < t) & (t < (xmax + 1*rng)))        
-            to=t[org_points]
-            Vo=V[org_points]
-            n=1 #take every nth point from data
-    #        k=1
-            if len(to)> self.N: # was: len(to)/k
-                n=int(len(to)/self.N) # was: len(to)/k/self.N)
-            tcut=to[::n]
-            Vcut=Vo[::n]
-            ax.set_prop_cycle(None)
-            try: 
-                ax.lines.remove(self.parent.all_plot[i])
-            except:
-                ax.set_xlim(max(tcut[0] -1e-6, xmin), min(tcut[-1] + 1e-6, xmax))
-            ax.autoscale(enable=False, axis='x', tight=False)
-            if self.parent.par['draw_lines']:
-                all_plot_new.append(ax.plot(tcut,Vcut, self.mker + '-',  label='%s Ch %d'%(self.fn[i],self.ch_n[i]), alpha=0.5, color=self.colors[self.ch_n[i]])[0])
-            else:
-                all_plot_new.append(ax.plot(tcut,Vcut, self.mker, label='%s Ch %d'%(self.fn[i],self.ch_n[i]), alpha=0.5, color=self.colors[self.ch_n[i]])[0])
-            Vc=np.concatenate((Vc,Vcut[np.where((xmin < tcut) & (tcut < xmax))]))
-       
+
+        t=self.t
+        V=self.V
+
+        #get original data which is in plotting region
+        org_points=np.where((xmin < t) & (t < xmax))
+        to=t[org_points]
+        Vo=V[org_points]
+        
+        n=1 #take every nth point from data
+        if len(to)> self.N: # was: len(to)/k
+            n=int(len(to)/self.N) # was: len(to)/k/self.N)
+        tcut=to[::n]
+        Vcut=Vo[::n]
+        ax.set_prop_cycle(None)
+        # cleear the data points (daters than removing data points and lines)
+        ax.clear()
+        # set the new limits careful with units here
+        ax.set_xlim(max(tcut[0]-1e-6, xmin), min(tcut[-1] + 1e-6, xmax))
+        ax.autoscale(enable=False, axis='x', tight=False)
+        
+        if self.parent.par['draw_lines']:
+            all_plot_new = ax.plot(tcut,Vcut, self.mker + '-',  label='%s Ch %d'%(self.fn,self.ch_n), alpha=0.5, color=self.colors[self.ch_n])
+        else:
+            all_plot_new = ax.plot(tcut,Vcut, self.mker, label='%s Ch %d'%(self.fn,self.ch_n), alpha=0.5, color=self.colors[self.ch_n])
+        Vc=Vcut[np.where((xmin < tcut) & (tcut < xmax))]
         Vcmin=Vc.min()
         Vcmax=Vc.max()
         ax.set_ylim(min((Vcmin - 0.1), ymin), max(Vcmax + 0.1,ymax))
@@ -113,8 +113,7 @@ class NavigationToolbar(NavigationToolbar2QT):
         ax.set_xlabel('t')
         ax.set_ylabel('V')
         ax.figure.canvas.draw()
-        
-        
+
 
 
 class NumberDialog(QtWidgets.QDialog):

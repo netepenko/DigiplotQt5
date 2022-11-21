@@ -21,13 +21,14 @@ class NavigationToolbar(NavigationToolbar2QT):
         self.V=[]
         self.ch_n=0
         self.fn='' # fila name array
+        # enter the number if data points to show
         self.Ncontrol= QtWidgets.QLineEdit(self)
         self.Ncontrol.setValidator(QtGui.QIntValidator(self.Ncontrol))
         self.Ncontrol.setFixedWidth(50)
         self.Ncontrol.setText(str(self.N))
         self.Nlabel=QtWidgets.QLabel('Data points on Fig, N=', self)
         
-        
+        # refresh button
         self.refr=QtWidgets.QPushButton(QtGui.QIcon('refresh.png'), None, self)
         self.refr.clicked.connect(self.getN)
           

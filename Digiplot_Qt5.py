@@ -452,6 +452,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["ts_start"] = 0.0
           self.par["ts_stop"] = 1.0
           self.par["ts_Vthreshold"] = 0.0   # for time slice histograms
+          self.par["ts_Vwidth"] = 0.2   # window width for rate calculation
           self.par["ts_Vhmin"] = 0.0
           self.par["ts_Vhmax"] = 1.0
           self.par["ts_VNbins"] = 100
@@ -608,6 +609,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                 ("&Find Peaks", "Find peaks", self.OnTSfindpeaks),
                 ("&FFT", "Calc FFT", self.OnTSFFTcalc),
                 ("&Rate Plot", "Plot rates", self.OnTSplotrate),
+                ("&Create 2D Histogram", "Create a 2D Histogram",self.OnTS2Dhistogram ),
                 ("&Create Histograms", "Create Histograms",self.OnTShistogram ),
                 ("&Delete Histograms", "delete all histograms", self.OnDeleteHistogram),
                 ("&Show Histograms", "Plot Histograms", self.OnTSshowhistos)),
@@ -775,7 +777,10 @@ class PlotFrame(QtWidgets.QMainWindow):
                return
           p = pfile(filename)
           for key in self.par:
-               self.par[key] = p.get_value(key)
+               try:
+                   self.par[key] = p.get_value(key)
+               except Exception as err:
+                   print(f'Problem reading {key} from parameter file: {err}, skipping!')
                print((key, " ", self.par[key]))
           # now set the check marks
           # get the menus
@@ -1142,12 +1147,17 @@ class PlotFrame(QtWidgets.QMainWindow):
                # clear figure
                self.histoframe.figure.clf()
                self.histoframe.axes = self.histoframe.figure.add_subplot(111)
-          if self.par['plot_histo_points']:
-              self.histos[n].plot_exp(axes = self.histoframe.axes, ignore_zeros = True)
-              self.histos[n].plot_fit(axes = self.histoframe.axes, ignore_zeros = True)
-          else:
+          is_2d = self.histos[n].__class__ == B.histo2d
+          if is_2d:
+              # for 2d histos
               self.histos[n].plot(axes = self.histoframe.axes)
-              self.histos[n].plot_fit(axes = self.histoframe.axes)
+          else:
+              if self.par['plot_histo_points']:
+                  self.histos[n].plot_exp(axes = self.histoframe.axes, ignore_zeros = True)
+                  self.histos[n].plot_fit(axes = self.histoframe.axes, ignore_zeros = True)
+              else:
+                  self.histos[n].plot(axes = self.histoframe.axes)
+                  self.histos[n].plot_fit(axes = self.histoframe.axes)
           self.histoframe.figure_canvas.draw()
           
 
@@ -1238,7 +1248,8 @@ class PlotFrame(QtWidgets.QMainWindow):
                # get the values above the V threshold
                tp = np.array(MAXTAB[0])
                Vp = np.array(MAXTAB[1])
-               iw = np.where( Vp > self.par["ts_Vthreshold"] )[0]
+               iw = np.where( (Vp > self.par["ts_Vthreshold"]) & 
+                              (Vp < self.par["ts_Vthreshold"] +  self.par["ts_Vwidth"]) )[0]
                print(('----------> store ', len(iw), ' peaks above threshold'))
                ts_counts.append(len(iw))
                ts_tp.append(tp[iw])
@@ -1322,6 +1333,29 @@ class PlotFrame(QtWidgets.QMainWindow):
           # hisograms created
           print(("Time slice histograms completed, %d histograms added" %len(self.histos)))
 
+     def OnTS2Dhistogram(self):
+          if (not hasattr(self, 'V_peak')) or (not hasattr(self, 't_peak')):
+              print("No peak data run find peaks first")
+              return
+          # time slice the data
+          dt = self.par['ts_width'] # step width
+          # 2d histogram setup
+          # y - aaxis
+          hy_min = self.par['ts_Vhmin']
+          hy_max = self.par['ts_Vhmax']
+          hy_bins = self.par['ts_VNbins']        
+          # x - axis
+          tmin = self.par['ts_start'] 
+          tmax = self.par['ts_stop']
+          hx_bins = int((tmax - tmin)/dt) + 1           
+          h_title = f'channel: {self.par["Detector channel"]}'             
+          h2 = B.histo2d(self.t_peak, self.V_peak, range = [[tmin,tmax],[hy_min,hy_max]], bins = [hx_bins, hy_bins],
+                              title = h_title, xlabel = r't[$\mu$ s]', ylabel = 'Pulse Height [V]')
+          self.histos.append(h2)
+     
+     def OnShow2dHisto(self):
+         pass
+          
      def OnTSshowhistos(self):
           if self.histos == []:
                print("No TS histos")
@@ -1497,7 +1531,7 @@ class PlotFrame(QtWidgets.QMainWindow):
      def OnSetTimeSlice(self):
           # show and change the parameters
           # parameter keys
-          pkeys=['t start','t stop','t width', 'V min', 'V max', 'N bins', 'V threshold']
+          pkeys=['t start','t stop','t width', 'V min', 'V max', 'N bins', 'V threshold', 'V width']
           # current data to be shown in the dialog
           data = {pkeys[0]:"%6.2e"%(self.par["ts_start"]), \
                   pkeys[1]:"%6.2e"%(self.par["ts_stop"]), \
@@ -1506,6 +1540,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                   pkeys[4]:"%5.3f"%(self.par["ts_Vhmax"]), \
                   pkeys[5]:"%d"%(int(self.par["ts_VNbins"])), \
                   pkeys[6]:"%5.3f"%(self.par["ts_Vthreshold"]), \
+                  pkeys[7]:"%5.3f"%(self.par["ts_Vwidth"]), \
                   }
           pdlg = NumberDialog(data, self, title="Time Slicing", \
                               labels = pkeys, \
@@ -1520,6 +1555,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["ts_Vhmax"] = float(pdlg.data[pkeys[4] ])
           self.par["ts_VNbins"] = int(pdlg.data[pkeys[5] ])
           self.par["ts_Vthreshold"] = float(pdlg.data[pkeys[6] ])
+          self.par["ts_Vwidth"] = float(pdlg.data[pkeys[7] ])
           pdlg.destroy()
 
      #----------------------------------------------------------------------

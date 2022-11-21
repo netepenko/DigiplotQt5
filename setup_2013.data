@@ -14,6 +14,7 @@ measure  =  True
  scale_y  =  1.0
  Vstep  =  0.1
  Vthreshold  =  0.09
+
  Vhmin  =  0.0
  Vhmax  =  1.5
  VNbins  =  150
@@ -21,6 +22,7 @@ measure  =  True
  ts_start  =  0.0
  ts_stop  =  1.0
  ts_Vthreshold  =  0.0
+ ts_Vwidth = 0.25
  ts_Vhmin  =  0.0
  ts_Vhmax  =  1.0
  ts_VNbins  =  100

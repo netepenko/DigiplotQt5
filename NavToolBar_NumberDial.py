@@ -70,7 +70,7 @@ class NavigationToolbar(NavigationToolbar2QT):
     # this function drops unnecessary ponts in ploting region to reduce
     # plotting delays, but keeps everything above threshold to see peaks
     
-    def thinning(self):
+    def thinning(self, title = ''):
         # get current axes
         self.axes = self.parent.axes
         ax = self.axes
@@ -86,6 +86,7 @@ class NavigationToolbar(NavigationToolbar2QT):
         org_points=np.where((xmin < t) & (t < xmax))
         to=t[org_points]
         Vo=V[org_points]
+
         
         n=1 #take every nth point from data
         if len(to)> self.N: # was: len(to)/k
@@ -112,6 +113,8 @@ class NavigationToolbar(NavigationToolbar2QT):
         ax.legend()
         ax.set_xlabel('t')
         ax.set_ylabel('V')
+        if title != '':
+            ax.set_title(title)
         ax.figure.canvas.draw()
 
 

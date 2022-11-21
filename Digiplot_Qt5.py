@@ -137,6 +137,9 @@ def load_gage_data(self, chan_num):
     self.f.close()
     print("Select data")
     self.select_data()
+    if self.par['auto_time_range']:
+        self.par["tmin"] = self.ti
+        self.par["tmax"] = self.tf       
 
 
 def load_NI_data(self, chan_num):
@@ -162,8 +165,9 @@ def load_NI_data(self, chan_num):
     self.ndata = self.nall
     self.ti = self.t0
     self.tf = self.t0 + (self.ndata-1)*self.dt
-    self.par["tmin"] = self.t0
-    self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
+    # set range
+    #self.par["tmin"] = self.t0
+    #self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
     # WB temp solution 8/13/13
     # set the type as 16 bit signed, this is not good the data type should come from
     # the hdf file
@@ -180,6 +184,9 @@ def load_NI_data(self, chan_num):
     print("Select data")
     self.select_data()
     print("Done")
+    if self.par['auto_time_range']:
+        self.par["tmin"] = self.ti
+        self.par["tmax"] = self.tf       
     
 
 def load_npz_data(self, chan_num):
@@ -195,13 +202,14 @@ def load_npz_data(self, chan_num):
     self.ndata = self.nall
     self.ti = self.t0
     self.tf = self.t0 + (self.ndata-1)*self.dt
-    self.par["tmin"] = self.t0
-    self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
     self.tall = d['time']
     self.ydata = d['signal']
     print("Select data")
     self.select_data()
     print("Done")
+    if self.par['auto_time_range']:
+        self.par["tmin"] = self.ti
+        self.par["tmax"] = self.tf       
    
 
 #----------------------------------------------------------------------
@@ -347,7 +355,8 @@ class TSPlotFrame(QtWidgets.QMainWindow):
           self.hist_forward=QtWidgets.QAction(QtGui.QIcon("r_arrow.png"),'Next slice', self)
           self.toolbar.addAction(self.hist_forward)
           self.hist_forward.triggered.connect(self.OnNextslice)
-          
+          self.toolbar.mker = '.'
+          self.toolbar.colors = colors
           self.show() 
     
      def UpdateStatusBar(self, event):
@@ -423,6 +432,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["limits"] = False
           self.par["use_limits"] = False
           self.par["auto_histo"] = True
+          self.par["auto_time_range"] = True
           self.par["filtered"] = False
           self.par["draw_lines"] = False
           self.par["Detector channel"] = 0
@@ -442,6 +452,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["ts_start"] = 0.0
           self.par["ts_stop"] = 1.0
           self.par["ts_Vthreshold"] = 0.0   # for time slice histograms
+          self.par["ts_Vwidth"] = 0.2   # window width for rate calculation
           self.par["ts_Vhmin"] = 0.0
           self.par["ts_Vhmax"] = 1.0
           self.par["ts_VNbins"] = 100
@@ -598,6 +609,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                 ("&Find Peaks", "Find peaks", self.OnTSfindpeaks),
                 ("&FFT", "Calc FFT", self.OnTSFFTcalc),
                 ("&Rate Plot", "Plot rates", self.OnTSplotrate),
+                ("&Create 2D Histogram", "Create a 2D Histogram",self.OnTS2Dhistogram ),
                 ("&Create Histograms", "Create Histograms",self.OnTShistogram ),
                 ("&Delete Histograms", "delete all histograms", self.OnDeleteHistogram),
                 ("&Show Histograms", "Plot Histograms", self.OnTSshowhistos)),
@@ -607,10 +619,11 @@ class PlotFrame(QtWidgets.QMainWindow):
                 ("&Use GaGe file", "Use Gage data", self.OnUseGaGe_file, 'RADIO', 'filetypes'), 
                 (None, None, None),
                 ("&Convert Integer", "Convert raw data to int16", self.OnToggleConvertInteger, 'CHECK'),
+                ("&Auto Time Range", "Set time range automatically", self.OnToggleAutoTimeRange, 'CHECK'),
                 (None, None, None),
                 ("&SetLimits", "Set limits for data processing", self.OnLimits, 'RADIO', 'rect'),
                 ("&Measure", "Measure differences in t and V", self.OnMeasure, 'RADIO', 'rect'),
-                ("&Use Limits ", "Use filtered data", self.OnTogglelimits, 'CHECK'),
+                ("&Use Limits ", "Use Limits", self.OnTogglelimits, 'CHECK'),
                 ("&Plot Lines ", "Draw lines or Points", self.OnToggleLines, 'CHECK'),
                 (None, None, None),
                 ("Plot &Histogram Points ", "Plot points instead of bars", self.OnToggleHistoPoints, 'CHECK'),
@@ -659,6 +672,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                   if 'Use npz file' in eachItem[0]: subMenu.setChecked(self.par['use_npz_file'])
                   if 'Use NI file' in eachItem[0]: subMenu.setChecked(self.par['use_NI_file'])
                   if 'Use GaGe file' in eachItem[0]: subMenu.setChecked(self.par['use_GaGe_file'])
+                  if 'Auto Time Range' in eachItem[0]: subMenu.setChecked(self.par['auto_time_range'])
                      
                       
                   subMenu.triggered.connect(eachItem[2])
@@ -763,7 +777,10 @@ class PlotFrame(QtWidgets.QMainWindow):
                return
           p = pfile(filename)
           for key in self.par:
-               self.par[key] = p.get_value(key)
+               try:
+                   self.par[key] = p.get_value(key)
+               except Exception as err:
+                   print(f'Problem reading {key} from parameter file: {err}, skipping!')
                print((key, " ", self.par[key]))
           # now set the check marks
           # get the menus
@@ -794,6 +811,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                item_dict['Use npz file'].setChecked(self.par['use_npz_file']); print("use_npz_file = ", self.par['use_npz_file'])
                item_dict['Use NI file'].setChecked(self.par['use_NI_file']); print("use_NI_file = ", self.par['use_NI_file'])
                item_dict['Use GaGe file'].setChecked(self.par['use_GaGe_file']); print("use_GaGe_file = ", self.par['use_GaGe_file'])
+               item_dict['Auto Time Range'].setChecked(self.par['auto_time_range']); print("auto_time_range = ", self.par['auto_time_range'])
 
           self.select_data()
           # all done
@@ -833,6 +851,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                item_dict['Use npz file'].setChecked(self.par['use_npz_file']); print("use_npz_file = ", self.par['use_npz_file'])
                item_dict['Use NI file'].setChecked(self.par['use_NI_file']); print("use_NI_file = ", self.par['use_NI_file'])
                item_dict['Use GaGe file'].setChecked(self.par['use_GaGe_file']); print("use_GaGe_file = ", self.par['use_GaGe_file'])
+               item_dict['Auto Time Range'].setChecked(self.par['auto_time_range']); print("auto_time_range = ", self.par['auto_time_range'])
           self.select_data()
           # all done
           
@@ -1063,14 +1082,19 @@ class PlotFrame(QtWidgets.QMainWindow):
          print ('FWHM = ', h.sigma.value*2.355)
          self.histoframe.figure_canvas.draw()
          # new histo with finer binning
-         hn = B.histo(self.V_peak, range=(cmin*0.9, cmax*1.1), bins= int(self.par["VNbins"]))
-         self.histos.append( hn )
-         hn.title = 'FWHM = {:.3e}, Position = {:.3e}, Resolution = {:.2e}%'.format(fwhm, pos, res)
-         hn.fit(cmin, cmax, plot_fit = False)
-         hn.plot()
-         hn.plot_fit()
-         latest_histo = len(self.histos) - 1
-         self.show_histos(latest_histo)
+         try:
+             hn = B.histo(self.V_peak, range=(cmin*0.9, cmax*1.1), bins= int(self.par["VNbins"]))
+             self.histos.append( hn )
+             hn.title = 'FWHM = {:.3e}, Position = {:.3e}, Resolution = {:.2e}%'.format(fwhm, pos, res)
+             hn.fit(cmin, cmax, plot_fit = False)
+             hn.plot()
+             hn.plot_fit()
+             latest_histo = len(self.histos) - 1
+             self.show_histos(latest_histo)
+         except Exception as err:
+             print(f'cannot create detail histogram: {err}')
+             print('If the error message is : "PlotFrame" object has no attribute "V_peak", run "Find Peaks" for all data first')
+
     
      def OnDeleteHistogram(self):
           self.histos = []
@@ -1123,12 +1147,17 @@ class PlotFrame(QtWidgets.QMainWindow):
                # clear figure
                self.histoframe.figure.clf()
                self.histoframe.axes = self.histoframe.figure.add_subplot(111)
-          if self.par['plot_histo_points']:
-              self.histos[n].plot_exp(axes = self.histoframe.axes, ignore_zeros = True)
-              self.histos[n].plot_fit(axes = self.histoframe.axes, ignore_zeros = True)
-          else:
+          is_2d = self.histos[n].__class__ == B.histo2d
+          if is_2d:
+              # for 2d histos
               self.histos[n].plot(axes = self.histoframe.axes)
-              self.histos[n].plot_fit(axes = self.histoframe.axes)
+          else:
+              if self.par['plot_histo_points']:
+                  self.histos[n].plot_exp(axes = self.histoframe.axes, ignore_zeros = True)
+                  self.histos[n].plot_fit(axes = self.histoframe.axes, ignore_zeros = True)
+              else:
+                  self.histos[n].plot(axes = self.histoframe.axes)
+                  self.histos[n].plot_fit(axes = self.histoframe.axes)
           self.histoframe.figure_canvas.draw()
           
 
@@ -1194,21 +1223,12 @@ class PlotFrame(QtWidgets.QMainWindow):
                return
           V = self.V_slice[n]
           t = self.t_slice[n]
-          # show the data
-          if self.par["draw_lines"]:
-              self.tsplotframe.all_plot=self.tsplotframe.my_plot(t[:V.shape[0]], V) 
-          else:
-              self.tsplotframe.all_plot=self.tsplotframe.my_plot(t[:V.shape[0]], V, '.') 
-          # show peak positions if there are any
-          if self.ts_counts is not None:
-               if self.ts_counts[n] != 0:
-                   self.tsplotframe.axes.set_autoscaley_on(True) 
-                   self.tsplotframe.axes.plot(self.ts_tp[n], self.ts_Vp[n], 'r.')
-          self.tsplotframe.axes.set_xlabel('t')
-          self.tsplotframe.axes.set_ylabel('V')
+          self.tsplotframe.toolbar.t = t
+          self.tsplotframe.toolbar.V = V
+          self.tsplotframe.toolbar.ch_n = self.par['Detector channel']
+          self.tsplotframe.toolbar.fn = self.name[-6:]
           s_title = 'Slice {0:d}, T_av = {1:10.3e}'.format(n, self.ts_av[n])
-          self.tsplotframe.axes.set_title(s_title)
-          self.tsplotframe.figure_canvas.draw()
+          self.tsplotframe.toolbar.thinning(title = s_title)
 
  
      def OnTSfindpeaks(self):
@@ -1228,7 +1248,8 @@ class PlotFrame(QtWidgets.QMainWindow):
                # get the values above the V threshold
                tp = np.array(MAXTAB[0])
                Vp = np.array(MAXTAB[1])
-               iw = np.where( Vp > self.par["ts_Vthreshold"] )[0]
+               iw = np.where( (Vp > self.par["ts_Vthreshold"]) & 
+                              (Vp < self.par["ts_Vthreshold"] +  self.par["ts_Vwidth"]) )[0]
                print(('----------> store ', len(iw), ' peaks above threshold'))
                ts_counts.append(len(iw))
                ts_tp.append(tp[iw])
@@ -1312,6 +1333,29 @@ class PlotFrame(QtWidgets.QMainWindow):
           # hisograms created
           print(("Time slice histograms completed, %d histograms added" %len(self.histos)))
 
+     def OnTS2Dhistogram(self):
+          if (not hasattr(self, 'V_peak')) or (not hasattr(self, 't_peak')):
+              print("No peak data run find peaks first")
+              return
+          # time slice the data
+          dt = self.par['ts_width'] # step width
+          # 2d histogram setup
+          # y - aaxis
+          hy_min = self.par['ts_Vhmin']
+          hy_max = self.par['ts_Vhmax']
+          hy_bins = self.par['ts_VNbins']        
+          # x - axis
+          tmin = self.par['ts_start'] 
+          tmax = self.par['ts_stop']
+          hx_bins = int((tmax - tmin)/dt) + 1           
+          h_title = f'channel: {self.par["Detector channel"]}'             
+          h2 = B.histo2d(self.t_peak, self.V_peak, range = [[tmin,tmax],[hy_min,hy_max]], bins = [hx_bins, hy_bins],
+                              title = h_title, xlabel = r't[$\mu$ s]', ylabel = 'Pulse Height [V]')
+          self.histos.append(h2)
+     
+     def OnShow2dHisto(self):
+         pass
+          
      def OnTSshowhistos(self):
           if self.histos == []:
                print("No TS histos")
@@ -1430,7 +1474,6 @@ class PlotFrame(QtWidgets.QMainWindow):
           tmin = float(pdlg.data[pkeys[1]])
           tmax = float(pdlg.data[pkeys[2]])
           pdlg.destroy()
-          print(f'tmin = {tmin}, tmax = {tmax}')
           if (tmax == tmin) :
               print("t_min < t_max is necessary !")
               return
@@ -1488,7 +1531,7 @@ class PlotFrame(QtWidgets.QMainWindow):
      def OnSetTimeSlice(self):
           # show and change the parameters
           # parameter keys
-          pkeys=['t start','t stop','t width', 'V min', 'V max', 'N bins', 'V threshold']
+          pkeys=['t start','t stop','t width', 'V min', 'V max', 'N bins', 'V threshold', 'V width']
           # current data to be shown in the dialog
           data = {pkeys[0]:"%6.2e"%(self.par["ts_start"]), \
                   pkeys[1]:"%6.2e"%(self.par["ts_stop"]), \
@@ -1497,6 +1540,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                   pkeys[4]:"%5.3f"%(self.par["ts_Vhmax"]), \
                   pkeys[5]:"%d"%(int(self.par["ts_VNbins"])), \
                   pkeys[6]:"%5.3f"%(self.par["ts_Vthreshold"]), \
+                  pkeys[7]:"%5.3f"%(self.par["ts_Vwidth"]), \
                   }
           pdlg = NumberDialog(data, self, title="Time Slicing", \
                               labels = pkeys, \
@@ -1511,6 +1555,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["ts_Vhmax"] = float(pdlg.data[pkeys[4] ])
           self.par["ts_VNbins"] = int(pdlg.data[pkeys[5] ])
           self.par["ts_Vthreshold"] = float(pdlg.data[pkeys[6] ])
+          self.par["ts_Vwidth"] = float(pdlg.data[pkeys[7] ])
           pdlg.destroy()
 
      #----------------------------------------------------------------------
@@ -1669,6 +1714,9 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["convert_int"] = not self.par["convert_int"]
           print(("convert integers = ", self.par["convert_int"]))
 
+     def OnToggleAutoTimeRange(self):
+          self.par["auto_time_range"] = not self.par["auto_time_range"]
+          print(("auto_time_range = ", self.par["auto_time_range"]))
 
      def OnTogglelimits(self):
           self.par["use_limits"] = not self.par["use_limits"]

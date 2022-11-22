@@ -21,5 +21,5 @@ This an ongoing development.
 
 ### v2.0.0 new features:
 
-- time range can be calculated autoatically or keep fixed (see options)
-- 2D histogram added: x-axis: time y-axis: pulse height (similar to time slicing)
+- time range can be calculated automatically or keep fixed (see options)
+- 2D histogram added: x-axis: time,  y-axis: pulse height (similar to time slicing)

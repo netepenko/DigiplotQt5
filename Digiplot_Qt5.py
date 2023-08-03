@@ -15,7 +15,7 @@ from LT.parameterfile import pfile
 # FFT
 import FFT
 #Navigation toolbar and number dialog
-from NavToolBar_NumberDial import NavigationToolbar, NumberDialog
+from NavToolBar_CustomDiallogs import NavigationToolbar, NumberDialog, TextDialog, LimitsListDialog
 import ffind_peaks as FP
 import itertools
 
@@ -30,7 +30,21 @@ colors = ['red', 'green', 'blue', 'magenta', 'cyan', 'orange',
 #----------------------------------------------------------------------
 # useful functions
 #----------------------------------------------------------------------
+#%%
 
+def is_even(x):
+    return x%2 == 0
+
+def moving_average(x, m):
+    # calculate the moving average for M points, based on convolution
+    # setup the
+
+    if is_even(m) :
+        m +=1
+        print (f'you need an odd number of kernel points, new value m = {m}')
+    kern = np.ones(m)/m
+    xc = np.convolve(x, kern)[:x.shape[0]]
+    return np.roll(xc, -m//2 + 1)
          
 def get_window(xmin, x, xmax):
      # get the slice corresponding to xmin and xmax in x
@@ -435,6 +449,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["auto_time_range"] = True
           self.par["filtered"] = False
           self.par["draw_lines"] = False
+          self.par["draw_points"] = True
           self.par["Detector channel"] = 0
           self.par["tmin"] = -1.e30
           self.par["tmax"] = 1.e30
@@ -447,6 +462,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["Vhmin"] = 0.0
           self.par["Vhmax"] = 1.0
           self.par["VNbins"] = 100
+          self.par["Navg"] = 21
           # time slices
           self.par["ts_width"]=1e-3
           self.par["ts_start"] = 0.0
@@ -457,9 +473,9 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["ts_Vhmax"] = 1.0
           self.par["ts_VNbins"] = 100
           self.par["use_npz_file"] = False # use npz data
-          self.par["use_NI_file"] = True # use NI digitizer data
-          self.par["use_GaGe_file"] = False # use Gage digitizer data
-          self.par["convert_int"] = True # integer conversion
+          self.par["use_NI_file"] = False # use NI digitizer data
+          self.par["use_GaGe_file"] = True # use Gage digitizer data
+          self.par["convert_int"] = False # integer conversion
           self.par["plot_histo_points"] = False # plot histogram data as points
           
           self.datadir = '../Raw_Data/'
@@ -468,6 +484,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.ndata = 0
           self.t = None
           self.V = None
+          self.limits = []
           self.Vinv = None
           self.MINTAB = None
           self.MAXTAB = None
@@ -540,14 +557,17 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.toolbar.colors=colors
           self.toolbar.markers=itertools.cycle(['.','*'])
           self.toolbar.mker=next(self.toolbar.markers)
+          self.toolbar.peak_marker = 'x'
           self.addToolBar(self.toolbar)
           
+          #self.RS = RectangleSelector(self.axes, self.LineSelectCallback)
           
           self.RS = RectangleSelector(self.axes, self.LineSelectCallback,
-                                      drawtype='box', useblit=True,
+                                      useblit=True,
                                       button=[1,3], # don't use middle button
                                       minspanx=5, minspany=5,
                                       spancoords='pixels')
+          
           self.setPalette(self.palette)
           self.setGeometry(150,150,800,600)
           self.createMenubar()
@@ -570,11 +590,16 @@ class PlotFrame(QtWidgets.QMainWindow):
 #                ("&Scan data directory", "Scan directory", self.OnScan),
 #                (None, None, None),  # creates a separator bar in the menu
                 ("&Plot", "Plot data", self.OnPlot),
+                ("&Save Limits", "save curent x-axis limits", self.OnSaveLimits),
+                ("&Choose  Limits", "use saved x-axis limits", self.OnChooseLimits),
+                ("&Clear  Limits", "clear x-axis limits", self.OnClearLimits),
                 (None, None, None),  # creates a separator bar in the menu
                 ("&FindPeaks", "find peaks in the plotting data", self.OnFindPeaks),
+                ("&Moving Average", "smooth data via moving avg.", self.OnMovingAvg),
                 (None, None, None),
                 ("&Histogram", "histogram peak data", self.OnHistogram),
                 ("&Fit Histogram", "Fit histogram peak area", self.OnFitHistogram),
+                ("&Sum Histogram", "Sum histogram peak area", self.OnSumHistogram),
                 ("&Delete Histogram", "delete all histograms", self.OnDeleteHistogram),
                 (None, None, None),
                 ("&Clear Figure", "Clear figure", self.OnClear)),
@@ -583,7 +608,7 @@ class PlotFrame(QtWidgets.QMainWindow):
 #                ("&Data directory", "Set data directory", self.OnSetScanDir), 
 #                (None, None, None),
                 ("&Detector Channel", "Set detector channel", self.OnSelectChannel), 
-                (None, None, None),			   
+                (None, None, None),               
                 ("&Time Range", "Set time slot", self.OnSelectTimeSlot), 
                 (None, None, None),
                 ("&Peak Finding", "Set parameters for peak finding", self.OnSetPeakpar), 
@@ -592,7 +617,9 @@ class PlotFrame(QtWidgets.QMainWindow):
                 (None, None, None),
                 ("FF&T Filter", "Set FFT filter parameters", self.OnSetFFTfilterpar),
                 (None, None, None),
-                ("Time &Slicing", "Set time slice parameters", self.OnSetTimeSlice)),
+                ("Time &Slicing", "Set time slice parameters", self.OnSetTimeSlice),
+                (None, None, None),
+                ("Moving &Average", "Set number points", self.OnSetMovingAvg)),
                ("&FFT",
                 ("&Calculate", "Calculate FFT", self.OnFFTcalc), 
                 ("&Freq.Cut", "Apply freq. Cut", self.OnFFTcutfilter),
@@ -621,10 +648,11 @@ class PlotFrame(QtWidgets.QMainWindow):
                 ("&Convert Integer", "Convert raw data to int16", self.OnToggleConvertInteger, 'CHECK'),
                 ("&Auto Time Range", "Set time range automatically", self.OnToggleAutoTimeRange, 'CHECK'),
                 (None, None, None),
-                ("&SetLimits", "Set limits for data processing", self.OnLimits, 'RADIO', 'rect'),
+                ("&ChooseLimits", "Set limits for data processing", self.OnLimits, 'RADIO', 'rect'),
                 ("&Measure", "Measure differences in t and V", self.OnMeasure, 'RADIO', 'rect'),
                 ("&Use Limits ", "Use Limits", self.OnTogglelimits, 'CHECK'),
-                ("&Plot Lines ", "Draw lines or Points", self.OnToggleLines, 'CHECK'),
+                ("&Plot Lines ", "Draw lines", self.OnToggleLines, 'CHECK'),
+                ("&Plot Points ", "Draw Points", self.OnTogglePoints, 'CHECK'),
                 (None, None, None),
                 ("Plot &Histogram Points ", "Plot points instead of bars", self.OnToggleHistoPoints, 'CHECK'),
                 ("&Auto Histogram Limits ", "Do not calculate histogram limits automatically", self.OnToggleHistolimits, 'CHECK'),
@@ -663,9 +691,10 @@ class PlotFrame(QtWidgets.QMainWindow):
                   # set initial checks
                   if 'Convert Integer' in eachItem[0]: subMenu.setChecked(self.par['convert_int'])         
                   if 'Measure' in eachItem[0]: subMenu.setChecked(self.par['measure'])           
-                  if 'SetLimits' in eachItem[0]: subMenu.setChecked(self.par['limits'])
+                  if 'ChooseLimits' in eachItem[0]: subMenu.setChecked(self.par['limits'])
                   if 'Use Limits' in eachItem[0]: subMenu.setChecked(self.par['use_limits'])
                   if 'Plot Lines' in eachItem[0]: subMenu.setChecked(self.par['draw_lines'])
+                  if 'Plot Points' in eachItem[0]: subMenu.setChecked(self.par['draw_points'])
                   if 'Auto Histogram' in eachItem[0]: subMenu.setChecked(self.par['auto_histo'])
                   if 'Histogram Points' in eachItem[0]: subMenu.setChecked(self.par['plot_histo_points'])
                   if 'Filtered' in eachItem[0]: subMenu.setChecked(self.par['filtered'])
@@ -800,7 +829,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                               item_dict[key] = item
           # set the values for the options menu
           if item_dict != {}:
-               item_dict["SetLimits"].setChecked(self.par["limits"]); print("SetLimits = ", self.par["limits"])
+               item_dict["ChooseLimits"].setChecked(self.par["limits"]); print("ChooseLimits = ", self.par["limits"])
                item_dict["Convert Integer"].setChecked(self.par["convert_int"]); print(("Convert Integer = ", self.par["convert_int"]))
                item_dict["Measure"].setChecked(self.par["measure"]); print("Measure = ", self.par["measure"])
                item_dict["Use Limits"].setChecked(self.par["use_limits"]); print("Use Limits = ",self.par["use_limits"])
@@ -808,6 +837,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                item_dict['Histogram Points'].setChecked(self.par['plot_histo_points']);print(("Plot Histogram Points = ", self.par["plot_histo_points"]))
                item_dict["Filtered"].setChecked(self.par["filtered"]); print("Filtered = ", self.par["filtered"])
                item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print("draw_lines = ", self.par["draw_lines"])
+               item_dict["Plot Points"].setChecked(self.par["draw_points"]); print("draw_points = ", self.par["draw_points"])
                item_dict['Use npz file'].setChecked(self.par['use_npz_file']); print("use_npz_file = ", self.par['use_npz_file'])
                item_dict['Use NI file'].setChecked(self.par['use_NI_file']); print("use_NI_file = ", self.par['use_NI_file'])
                item_dict['Use GaGe file'].setChecked(self.par['use_GaGe_file']); print("use_GaGe_file = ", self.par['use_GaGe_file'])
@@ -824,7 +854,10 @@ class PlotFrame(QtWidgets.QMainWindow):
                print((key, " ", self.par[key]))
           # now set the check marks
           # get the menus
-          
+          self.update_options_menu()        
+
+ 
+     def update_options_menu(self):
           menus = [i.menu() for i in self.mbar.actions()]
           items = None
           item_dict = {}
@@ -836,11 +869,12 @@ class PlotFrame(QtWidgets.QMainWindow):
                          if item.text() == "":
                               continue
                          else:
-                              key = item.text().strip()[1:]
+                              key = item.text().split('&')[-1].strip()   # use only last part
                               item_dict[key] = item
           # set the values for the options menu
+          print(f'Options item dict = {item_dict.keys()}')
           if item_dict != {}:
-               item_dict["SetLimits"].setChecked(self.par["limits"]); print(("SetLimits = ", self.par["limits"]))
+               item_dict["ChooseLimits"].setChecked(self.par["limits"]); print(("ChooseLimits = ", self.par["limits"]))
                item_dict["Convert Integer"].setChecked(self.par["convert_int"]); print(("Convert Integer = ", self.par["convert_int"]))
                item_dict["Measure"].setChecked(self.par["measure"]); print(("Measure = ", self.par["measure"]))
                item_dict["Use Limits"].setChecked(self.par["use_limits"]); print(("Use Limits = ",self.par["use_limits"]))
@@ -848,13 +882,14 @@ class PlotFrame(QtWidgets.QMainWindow):
                item_dict['Histogram Points'].setChecked(self.par['plot_histo_points']);print(("Plot Histogram Points = ", self.par["plot_histo_points"]))
                item_dict["Filtered"].setChecked(self.par["filtered"]); print(("Filtered = ", self.par["filtered"]))
                item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print(("draw_lines = ", self.par["draw_lines"]))
-               item_dict['Use npz file'].setChecked(self.par['use_npz_file']); print("use_npz_file = ", self.par['use_npz_file'])
-               item_dict['Use NI file'].setChecked(self.par['use_NI_file']); print("use_NI_file = ", self.par['use_NI_file'])
-               item_dict['Use GaGe file'].setChecked(self.par['use_GaGe_file']); print("use_GaGe_file = ", self.par['use_GaGe_file'])
-               item_dict['Auto Time Range'].setChecked(self.par['auto_time_range']); print("auto_time_range = ", self.par['auto_time_range'])
+               item_dict["Plot Points"].setChecked(self.par["draw_points"]); print(("draw_points = ", self.par["draw_points"]))
+               item_dict['Use npz file'].setChecked(self.par['use_npz_file']); print(("use_npz_file = ", self.par['use_npz_file']))
+               item_dict['Use NI file'].setChecked(self.par['use_NI_file']); print(("use_NI_file = ", self.par['use_NI_file']))
+               item_dict['Use GaGe file'].setChecked(self.par['use_GaGe_file']); print(("use_GaGe_file = ", self.par['use_GaGe_file']))
+               item_dict['Auto Time Range'].setChecked(self.par['auto_time_range']); print(("auto_time_range = ", self.par['auto_time_range']))
           self.select_data()
-          # all done
-          
+          # all done          
+
 
      def OnSaveParameters(self,event):
           # Create a file-open dialog in the current directory
@@ -889,7 +924,7 @@ class PlotFrame(QtWidgets.QMainWindow):
      def select_data(self):
           # select data range to work on
           if not hasattr(self, "tall"):
-              print(f'No data !')
+              print('No data !')
               return
           # debugging
           if self.ndata == 0:
@@ -982,8 +1017,8 @@ class PlotFrame(QtWidgets.QMainWindow):
      # Action menu routines   
      #----------------------------------------------------------------------
      def OnPlot(self):
-          if (self.par['Detector channel'] ==  self.toolbar.ch_n) and (self.name[-6:] == self.toolbar.fn):
-              return
+          #if (self.par['Detector channel'] ==  self.toolbar.ch_n) and (self.name[-6:] == self.toolbar.fn):
+          #    return
           V = None
           if self.par["filtered"]:
                V = self.Vinv
@@ -991,29 +1026,63 @@ class PlotFrame(QtWidgets.QMainWindow):
                V = self.V
           if (self.t is None) or (V is None):
                print("Nothing to plot !")
-               return           
-          self.toolbar.t = self.t
-          self.toolbar.V = V
+               return
+          # store data in toolbar, necessary for thinning
+          self.axes.set_xlim(self.t.min(), self.t.max())
+          self.toolbar.set_data(self.t, V)
+          self.toolbar.xlabel = 't'
+          self.toolbar.ylabel = 'V'
           self.toolbar.ch_n = self.par['Detector channel']
           self.toolbar.fn = self.name[-6:]
         
           self.toolbar.thinning()
+    
+     def OnSaveLimits(self):
+          pkeys=['Enter Comment']
+          data = {pkeys[0]:""}
+          pdlg = TextDialog(data, self, title="Comment for plot range", \
+                              labels = pkeys, \
+                                  keys = pkeys, \
+                                      about_txt = "Save current plot range")
+          pdlg.exec_()
+          # now set the new parameters
+          comment = pdlg.data[pkeys[0]]
+          pdlg.destroy()
+          
+          self.limits.append({'value':self.axes.get_xlim(), 'comment':comment})
+          
+     def OnChooseLimits(self):
+          if self.limits == []:
+              print('Limits not yet set !')
+              return
+          dlg = LimitsListDialog(self.limits)
+          
+          dlg.exec_()
+          self.axes.set_xlim(self.limits[dlg.selected_index]['value'])
+          dlg.destroy()
+          # redraw
+          self.toolbar.thinning()
+          
+          
+     def OnClearLimits(self):
+          self.limits = []
 
      def OnClear(self):
           self.figure.clf()
           self.axes=self.figure.add_subplot(111)
           self.RS = RectangleSelector(self.axes, self.LineSelectCallback,
-                                      drawtype='box', useblit=True,
+                                      useblit=True,
                                       button=[1,3], # don't use middle button
                                       minspanx=5, minspany=5,
                                       spancoords='pixels')
           self.figure_canvas.draw()
-          self.toolbar.ch_n=[]
-          self.toolbar.t=[]
-          self.toolbar.V=[]
-          self.toolbar.fn=[]
+          self.toolbar.ch_n=self.par['Detector channel']
+          self.toolbar.set_data(np.array([]), np.array([]))
+          self.toolbar.fn=''
           self.toolbar.markers=itertools.cycle(['.','*'])
           self.toolbar.mker=next(self.toolbar.markers)
+          self.toolbar.peak_marker = 'x'
+          
      def OnFindPeaks(self):
           if (self.t is None) or (self.V is None):
                print("No data, nothing to find !")
@@ -1044,9 +1113,22 @@ class PlotFrame(QtWidgets.QMainWindow):
                self.par["Vhmax"] = self.V_peak.max()
           
           self.axes.set_autoscaley_on(True)
-          self.axes.plot(self.t_peak,self.V_peak, self.toolbar.mker , color=colors[self.par['Detector channel']])
+          self.toolbar.set_peakdata(self.t_peak, self.V_peak)
+          self.toolbar.plot_peaks = True
+          if len(self.toolbar.x) == 0:
+              # not data for thinning
+              self.axes.plot(self.t_peak,self.V_peak, self.toolbar.peak_marker , color='m')
+          else:
+              self.toolbar.thinning()
+          
           self.figure_canvas.draw()
+     
+     def OnMovingAvg(self):
+         self.V = moving_average(self.V, self.par["Navg"])
+         print('Moving avg. calculated')
 
+                 
+         
      def OnHistogram(self):
           if self.MAXTAB == None:
                print("No peaks yet !")
@@ -1069,6 +1151,9 @@ class PlotFrame(QtWidgets.QMainWindow):
      def OnFitHistogram(self):
          # fit current histo
          # pl.sca(self.histoframe.axes)
+         if self.histos == []:
+             print('No histrograms to fit!')
+             return         
          h = self.histos[self.current_histo]
          # get current plot limits (useful for setting fit limits)
          cmin, cmax = self.histoframe.axes.get_xlim()
@@ -1095,7 +1180,22 @@ class PlotFrame(QtWidgets.QMainWindow):
              print(f'cannot create detail histogram: {err}')
              print('If the error message is : "PlotFrame" object has no attribute "V_peak", run "Find Peaks" for all data first')
 
-    
+     def OnSumHistogram(self):    
+         # sum up current histo
+         # pl.sca(self.histoframe.axes)
+         if self.histos == []:
+             print('No histrograms to sum!')
+             return
+         h = self.histos[self.current_histo]
+         # get current plot limits (useful for setting fit limits)
+         cmin, cmax = self.histoframe.axes.get_xlim()
+         # fit the hitogram within these limits
+         S = h.sum(cmin, cmax)
+         # present result in a message boxk
+         mb=QtWidgets.QMessageBox(self)
+         mb.setText(f"Histogram sum between {cmin:.2e} and {cmax:.2e} = {S[0]:.3e} +/- {S[1]:.1e} ")
+         mb.exec_()
+         
      def OnDeleteHistogram(self):
           self.histos = []
           self.current_histo = 0
@@ -1223,8 +1323,9 @@ class PlotFrame(QtWidgets.QMainWindow):
                return
           V = self.V_slice[n]
           t = self.t_slice[n]
-          self.tsplotframe.toolbar.t = t
-          self.tsplotframe.toolbar.V = V
+          self.tsplotframe.toolbar.set_data(t,V)
+          self.tsplotframe.toolbar.xlabel = 't'
+          self.tsplotframe.toolbar.ylabel = 'V'
           self.tsplotframe.toolbar.ch_n = self.par['Detector channel']
           self.tsplotframe.toolbar.fn = self.name[-6:]
           s_title = 'Slice {0:d}, T_av = {1:10.3e}'.format(n, self.ts_av[n])
@@ -1426,6 +1527,8 @@ class PlotFrame(QtWidgets.QMainWindow):
                return
           if self.par["draw_lines"]:
                self.axes.plot(self.fft.f,self.fft.logp)
+          elif self.par["draw_lines"] and self.par["draw_points"] :
+               self.axes.plot(self.fft.f,self.fft.logp, '.-')
           else:
                self.axes.plot(self.fft.f,self.fft.logp, '.')
           # self.axes.set_yscale('log')
@@ -1558,6 +1661,21 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["ts_Vwidth"] = float(pdlg.data[pkeys[7] ])
           pdlg.destroy()
 
+     def OnSetMovingAvg(self):
+          # show and change parameters
+          # parameter keys
+          pkeys=['N Average']
+          data = {pkeys[0]:"%d"%(int(self.par["Navg"]))}
+          pdlg = NumberDialog(data, self, title="Points for Moving Average", \
+                              labels = pkeys, \
+                                  keys = pkeys, \
+                                      about_txt = "Set number of points")
+          pdlg.exec_()
+          # now set the new parameters
+          self.par['Navg']=int(pdlg.data[pkeys[0]])
+          print(f'Set Navg = {self.par["Navg"]}')
+
+
      #----------------------------------------------------------------------
      # FFT routines
      #----------------------------------------------------------------------
@@ -1573,47 +1691,49 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.fft.logp = np.log10(self.fft.p)
 
      def OnFFTplotps(self):
-          # plot power spectrum
           if not self.fft.ok:
                print("No power spectrum to plot")
                return
+          # plot power spectrum
+          # set initiall axis limits:
+          self.axes.set_xlim(self.fft.f.min(), self.fft.f.max())
+          self.toolbar.set_data(self.fft.f, self.fft.logp)
+          self.toolbar.xlabel = 'f (Hz)'
+          self.toolbar.ylabel = 'PS'
+          self.toolbar.thinning('log(Power)')
+          """
           if self.par["draw_lines"]:
-               self.axes.plot(self.fft.f,self.fft.logp)
+               self.axes.plot(self.fft.f[::skip],self.fft.logp[::skip])
           else:
-               self.axes.plot(self.fft.f,self.fft.logp, '.')
+               self.axes.plot(self.fft.f[::skip],self.fft.logp[::skip], '.')
           # self.axes.set_yscale('log')
           self.axes.set_xlabel('f')
           self.axes.set_ylabel('Power')
           self.axes.set_title('log(Power)')
           self.figure_canvas.draw()
-
+          """
+          
      def OnFFTplotan(self):
           # plot sin coeff
           if not self.fft.ok:
                print("No power spectrum to plot")
                return
-          if self.par["draw_lines"]:
-               self.axes.plot(self.fft.f,np.abs(self.fft.an))
-          else:
-               self.axes.plot(self.fft.f,np.abs(self.fft.an),'.')
-          self.axes.set_yscale('log')
-          self.axes.set_xlabel('f')
-          self.axes.set_ylabel('an')
-          self.figure_canvas.draw()
-
+          self.axes.set_xlim(self.fft.f.min(), self.fft.f.max())
+          self.toolbar.set_data(self.fft.f, np.log10(np.abs(self.fft.an)))
+          self.toolbar.xlabel = 'f (Hz)'
+          self.toolbar.ylabel = 'log(abs(an))'
+          self.toolbar.thinning('an')
+          
      def OnFFTplotbn(self):
           # plot cos coeff
           if not self.fft.ok:
                print("No power spectrum to plot")
                return
-          if self.par["draw_lines"]:
-               self.axes.plot(self.fft.f,np.abs(self.fft.bn))
-          else:
-               self.axes.plot(self.fft.f,np.abs(self.fft.bn),'.')
-          self.axes.set_yscale('log')
-          self.axes.set_xlabel('f')
-          self.axes.set_ylabel('abs(bn)')
-          self.figure_canvas.draw()
+          self.axes.set_xlim(self.fft.f.min(), self.fft.f.max())
+          self.toolbar.set_data(self.fft.f, np.log10(np.abs(self.fft.bn)))
+          self.toolbar.xlabel = 'f (Hz)'
+          self.toolbar.ylabel = 'log(abs(bn))'
+          self.toolbar.thinning('bn')
 
      def OnSetFFTfilterpar(self):
           # show and change the parameters
@@ -1733,11 +1853,27 @@ class PlotFrame(QtWidgets.QMainWindow):
 
      def OnToggleLines(self, event):
           self.par["draw_lines"] = not self.par["draw_lines"]
-          print(("draw Lines = ", self.par["draw_lines"]))
+          if not (self.par["draw_lines"] or self.par["draw_points"]):
+              self.par["draw_points"] = True
+              print('----> force draw_points = True')
+              self.update_options_menu()
           try:
               self.toolbar.thinning()
           except:
               'Thinning did not work'
+
+     def OnTogglePoints(self, event):
+          self.par["draw_points"] = not self.par["draw_points"]
+          if not (self.par["draw_lines"] or self.par["draw_points"]):
+              self.par["draw_points"] = True
+              print('----> force draw_points = True')
+              self.update_options_menu()
+          print(("draw points = ", self.par["draw_points"]))
+          try:
+              self.toolbar.thinning()
+          except:
+              'Thinning did not work' 
+              
      def OnUsefiltered(self, event):
           self.par["filtered"] = not self.par["filtered"]
           print(("use filtered = ", self.par["filtered"]))

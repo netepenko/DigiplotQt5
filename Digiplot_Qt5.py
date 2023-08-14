@@ -450,6 +450,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["filtered"] = False
           self.par["draw_lines"] = False
           self.par["draw_points"] = True
+          self.par["hide_peaks"] = False
           self.par["Detector channel"] = 0
           self.par["tmin"] = -1.e30
           self.par["tmax"] = 1.e30
@@ -593,6 +594,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                 ("&Save Limits", "save curent x-axis limits", self.OnSaveLimits),
                 ("&Choose  Limits", "use saved x-axis limits", self.OnChooseLimits),
                 ("&Clear  Limits", "clear x-axis limits", self.OnClearLimits),
+                ("&Clear  Peaks", "clear peka positions", self.OnClearPeaks),
                 (None, None, None),  # creates a separator bar in the menu
                 ("&FindPeaks", "find peaks in the plotting data", self.OnFindPeaks),
                 ("&Moving Average", "smooth data via moving avg.", self.OnMovingAvg),
@@ -653,6 +655,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                 ("&Use Limits ", "Use Limits", self.OnTogglelimits, 'CHECK'),
                 ("&Plot Lines ", "Draw lines", self.OnToggleLines, 'CHECK'),
                 ("&Plot Points ", "Draw Points", self.OnTogglePoints, 'CHECK'),
+                ("&Hide Peaks ", "Do not show peaks", self.OnToggleHidePeaks, 'CHECK'),
                 (None, None, None),
                 ("Plot &Histogram Points ", "Plot points instead of bars", self.OnToggleHistoPoints, 'CHECK'),
                 ("&Auto Histogram Limits ", "Do not calculate histogram limits automatically", self.OnToggleHistolimits, 'CHECK'),
@@ -695,6 +698,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                   if 'Use Limits' in eachItem[0]: subMenu.setChecked(self.par['use_limits'])
                   if 'Plot Lines' in eachItem[0]: subMenu.setChecked(self.par['draw_lines'])
                   if 'Plot Points' in eachItem[0]: subMenu.setChecked(self.par['draw_points'])
+                  if 'Hide Peaks' in eachItem[0]: subMenu.setChecked(self.par['hide_peaks'])
                   if 'Auto Histogram' in eachItem[0]: subMenu.setChecked(self.par['auto_histo'])
                   if 'Histogram Points' in eachItem[0]: subMenu.setChecked(self.par['plot_histo_points'])
                   if 'Filtered' in eachItem[0]: subMenu.setChecked(self.par['filtered'])
@@ -772,6 +776,8 @@ class PlotFrame(QtWidgets.QMainWindow):
          self.stBar1.setText('Current file : %s / Channel : %s'%(self.name+self.ext, chan_num))
          # get the data according to the data file type
          print("Get data")
+         # clear peaks
+         self.OnClearPeaks()
          try:
              if self.par["use_GaGe_file"]:   
                  load_gage_data(self, chan_num)
@@ -838,6 +844,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                item_dict["Filtered"].setChecked(self.par["filtered"]); print("Filtered = ", self.par["filtered"])
                item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print("draw_lines = ", self.par["draw_lines"])
                item_dict["Plot Points"].setChecked(self.par["draw_points"]); print("draw_points = ", self.par["draw_points"])
+               item_dict["Hide Peaks"].setChecked(self.par["hide_peaks"]); print("hide_peaks = ", self.par["hide_peaks"])
                item_dict['Use npz file'].setChecked(self.par['use_npz_file']); print("use_npz_file = ", self.par['use_npz_file'])
                item_dict['Use NI file'].setChecked(self.par['use_NI_file']); print("use_NI_file = ", self.par['use_NI_file'])
                item_dict['Use GaGe file'].setChecked(self.par['use_GaGe_file']); print("use_GaGe_file = ", self.par['use_GaGe_file'])
@@ -883,6 +890,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                item_dict["Filtered"].setChecked(self.par["filtered"]); print(("Filtered = ", self.par["filtered"]))
                item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print(("draw_lines = ", self.par["draw_lines"]))
                item_dict["Plot Points"].setChecked(self.par["draw_points"]); print(("draw_points = ", self.par["draw_points"]))
+               item_dict["Hide Peaks"].setChecked(self.par["hide_peaks"]); print(("hide_peaks = ", self.par["hide_peaks"]))
                item_dict['Use npz file'].setChecked(self.par['use_npz_file']); print(("use_npz_file = ", self.par['use_npz_file']))
                item_dict['Use NI file'].setChecked(self.par['use_NI_file']); print(("use_NI_file = ", self.par['use_NI_file']))
                item_dict['Use GaGe file'].setChecked(self.par['use_GaGe_file']); print(("use_GaGe_file = ", self.par['use_GaGe_file']))
@@ -1114,7 +1122,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           
           self.axes.set_autoscaley_on(True)
           self.toolbar.set_peakdata(self.t_peak, self.V_peak)
-          self.toolbar.plot_peaks = True
+          self.toolbar.plot_peaks = not self.par["hide_peaks"] 
           if len(self.toolbar.x) == 0:
               # not data for thinning
               self.axes.plot(self.t_peak,self.V_peak, self.toolbar.peak_marker , color='m')
@@ -1122,12 +1130,16 @@ class PlotFrame(QtWidgets.QMainWindow):
               self.toolbar.thinning()
           
           self.figure_canvas.draw()
+          
+     def OnClearPeaks(self):
+         self.t_peak = []
+         self.V_peak = []
+         self.toolbar.set_peakdata(self.t_peak, self.V_peak)
      
      def OnMovingAvg(self):
          self.V = moving_average(self.V, self.par["Navg"])
          print('Moving avg. calculated')
-
-                 
+                
          
      def OnHistogram(self):
           if self.MAXTAB == None:
@@ -1873,6 +1885,15 @@ class PlotFrame(QtWidgets.QMainWindow):
               self.toolbar.thinning()
           except:
               'Thinning did not work' 
+
+     def OnToggleHidePeaks(self, event):
+          self.par["hide_peaks"] = not self.par["hide_peaks"]
+          print(("hide peaks = ", self.par["hide_peaks"]))
+          if self.par["hide_peaks"]:
+              self.toolbar.plot_peaks = False
+          else:
+              self.toolbar.plot_peaks = True
+
               
      def OnUsefiltered(self, event):
           self.par["filtered"] = not self.par["filtered"]

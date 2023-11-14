@@ -15,7 +15,7 @@ from LT.parameterfile import pfile
 # FFT
 import FFT
 #Navigation toolbar and number dialog
-from NavToolBar_CustomDiallogs import NavigationToolbar, NumberDialog, TextDialog, LimitsListDialog
+from NavToolBar_CustomDialogs import NavigationToolbar, NumberDialog, TextDialog, LimitsListDialog
 import ffind_peaks as FP
 import itertools
 
@@ -100,8 +100,34 @@ def find_peaks(yval, ystep, xval = None, \
      MINTAB.append( yval[pmin[:nmin]] )
      MINTAB.append(pmin[:nmin])
      return [MAXTAB,MINTAB]
-     
 
+
+#%% standard peak shape     
+def peak(x, a, b):
+    # calculate the location of the maximum of the model peak shape
+    if 2.*b/a-1.>0:
+        x_0 = np.log(2.*b/a-1.)/(2.*b)
+    else:
+        x_0 = 0
+    # value at the maximum location
+    y_0 = np.exp(-a*(x_0))*(1.+np.tanh(b*(x_0)))
+    # normalized shape centered at 0
+    y = 1./y_0*np.exp(-a*(x+x_0))*(1.+np.tanh(b*(x+x_0)))
+    # estimate full width
+    large = y>=0.5
+    try:
+        il = np.where(large)[0]
+        i1 = il.min()
+        i2 = il.max()
+        sig = x[i2] - x[i1]
+    except:
+        sig = 0.
+    return sig, y 
+
+def print_array(a, name):
+    a_str = ''.join([f'{xx},' for xx in a])[:-1]
+    print(f'{name} = [{a_str}]')
+    
 
 
 #----------------------------------------------------------------------
@@ -464,6 +490,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["Vhmax"] = 1.0
           self.par["VNbins"] = 100
           self.par["Navg"] = 21
+          self.par["alpha"] = 0.5
           # time slices
           self.par["ts_width"]=1e-3
           self.par["ts_start"] = 0.0
@@ -1041,6 +1068,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.toolbar.xlabel = 't'
           self.toolbar.ylabel = 'V'
           self.toolbar.ch_n = self.par['Detector channel']
+          self.toolbar.alpha = self.par['alpha']
           self.toolbar.fn = self.name[-6:]
         
           self.toolbar.thinning()

@@ -25,6 +25,7 @@ class NavigationToolbar(NavigationToolbar2QT):
         #self.t=[]
         #self.V=[]
         self.ch_n=0
+        self.alpha = 0.5
         self.x=[]
         self.y=[]
         self.fn='' # file name array
@@ -145,11 +146,12 @@ class NavigationToolbar(NavigationToolbar2QT):
         l_text = '%s Ch %d'%(self.fn,self.ch_n)
         print('Label data = ', self.fn, self.ch_n)
         if self.parent.par['draw_lines'] and (not self.parent.par['draw_points']):    
-            all_plot_new = ax.plot(xcut,ycut, '-',  label=l_text, alpha=0.5, color=self.colors[self.ch_n])
+            all_plot_new = ax.plot(xcut,ycut, '-',  label=l_text, alpha=self.alpha, color=self.colors[self.ch_n])
         elif self.parent.par['draw_lines'] and self.parent.par['draw_points']:
-            all_plot_new = ax.plot(xcut,ycut, self.mker + '-',  label=l_text, alpha=0.5, color=self.colors[self.ch_n])
+            all_plot_new = ax.plot(xcut,ycut, '-',  label=l_text, alpha=self.alpha, color=self.colors[self.ch_n])
+            all_plot_new = ax.plot(xcut,ycut, self.mker , color=self.colors[self.ch_n])
         else:
-            all_plot_new = ax.plot(xcut,ycut, self.mker, label=l_text, alpha=0.5, color=self.colors[self.ch_n])
+            all_plot_new = ax.plot(xcut,ycut, self.mker, label=l_text, color=self.colors[self.ch_n])
         # plot peaks if selected
         if self.plot_peaks:
             peak_plot = ax.plot(self.xpeak, self.ypeak, 'x' , color='m')

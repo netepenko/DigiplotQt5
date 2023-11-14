@@ -23,3 +23,4 @@ This an ongoing development.
 
 - time range can be calculated automatically or keep fixed (see options)
 - 2D histogram added: x-axis: time,  y-axis: pulse height (similar to time slicing)
+

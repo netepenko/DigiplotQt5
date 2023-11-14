@@ -25,7 +25,7 @@ class NavigationToolbar(NavigationToolbar2QT):
         #self.t=[]
         #self.V=[]
         self.ch_n=0
-        self.alpha = 0.5
+        self.alpha = 0.75
         self.x=[]
         self.y=[]
         self.fn='' # file name array
@@ -145,6 +145,7 @@ class NavigationToolbar(NavigationToolbar2QT):
         ax.autoscale(enable=False, axis='x', tight=False)
         l_text = '%s Ch %d'%(self.fn,self.ch_n)
         print('Label data = ', self.fn, self.ch_n)
+        print(f'===> toolbar alpha = {self.alpha}')
         if self.parent.par['draw_lines'] and (not self.parent.par['draw_points']):    
             all_plot_new = ax.plot(xcut,ycut, '-',  label=l_text, alpha=self.alpha, color=self.colors[self.ch_n])
         elif self.parent.par['draw_lines'] and self.parent.par['draw_points']:

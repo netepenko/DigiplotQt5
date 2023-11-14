@@ -19,13 +19,27 @@ from NavToolBar_CustomDialogs import NavigationToolbar, NumberDialog, TextDialog
 import ffind_peaks as FP
 import itertools
 
+# matplotlibn colors
+import matplotlib.colors as COL
+# colors list
+color_table = COL.CSS4_COLORS
+color_names = list(color_table.keys())
+
+
 # for argument passing 
 import argparse as AG
 
 convert_int = False  
 # convert_int = True                       # added 3/3 from True to False based on LabView updates
-colors = ['red', 'green', 'blue', 'magenta', 'cyan', 'orange',
-          'lavenderblush', 'maroon', 'plum']
+colors = [color_table['red'],
+          color_table['green'], 
+          color_table['blue'], 
+          color_table['magenta'], 
+          color_table['darkcyan'], 
+          color_table['orange'],
+          color_table['firebrick'], 
+          color_table['olive'], 
+          color_table['mediumorchid']]
 
 #----------------------------------------------------------------------
 # useful functions
@@ -490,7 +504,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["Vhmax"] = 1.0
           self.par["VNbins"] = 100
           self.par["Navg"] = 21
-          self.par["alpha"] = 0.5
+          self.par["alpha"] = 0.75
           # time slices
           self.par["ts_width"]=1e-3
           self.par["ts_start"] = 0.0
@@ -1013,6 +1027,12 @@ class PlotFrame(QtWidgets.QMainWindow):
                self.axes.text(self.par["xmin"], self.ymin, "%5.2e, %5.2e"%(start_pos[0], start_pos[1]), 
                               ha = 'right', va = 'top')
                self.axes.text(self.par["xmax"], self.ymax, "%5.2e, %5.2e"%(end_pos[0], end_pos[1]) )
+               delta_t = dpos[0]
+               f_measure = 1./delta_t
+               mb=QtWidgets.QMessageBox(self)
+               mb.setText(f"Time interval = {delta_t:.3e}s / f = {f_measure:.3e} Hz ")
+               mb.exec_()
+
           if self.par["limits"]:
                ymin,ymax = self.axes.get_ylim()
                xpath = [self.par["xmin"], self.par["xmax"], self.par["xmax"], self.par["xmin"]]
@@ -1069,6 +1089,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.toolbar.ylabel = 'V'
           self.toolbar.ch_n = self.par['Detector channel']
           self.toolbar.alpha = self.par['alpha']
+          print(f'---> set toolbar alpha to {self.toolbar.alpha}')
           self.toolbar.fn = self.name[-6:]
         
           self.toolbar.thinning()

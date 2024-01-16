@@ -31,3 +31,4 @@ This an ongoing development.
 - A time offset can be added to align the digitizer time with the shot time. This is also in the parameter section under "Time offset". This offset is added to the digitizer time, and can be negative.
 - viewing limits for the data can be saved and recalled using "Actions->Save Limits" or  "Actions->Choose Limits". This is usefule to save zoomed areas.
 - Found peaks can be cleared using "Actions->Clear Peaks"
+- Save current view (zoomed in) data as npz file. Using File->Save View Data saves the actual data currently displayed. **Careful:** only use this to save narrow data slices otherwise you will create huge files. 

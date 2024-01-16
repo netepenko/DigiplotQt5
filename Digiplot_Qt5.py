@@ -562,6 +562,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par_dir = None
           self.hist_dir = None
           self.res_dir = None
+          self.view_dir = None
           self.name = None
           self.ext = None
           self.fileDataOK = False
@@ -628,9 +629,10 @@ class PlotFrame(QtWidgets.QMainWindow):
                 ("&Open", "Select data files", self.OnSelectFile),  # menu items consisting of: label, text, handler
                 ("&Reload", "Reload data files", self.OnReload),  
                 ("&Load Parameters", "Load parameters", self.OnLoadParameters), 
-                ("&Save Parameters", "Save parameters", self.OnSaveParameters), 
-                ("&Save Histograms", "Save all histograms", self.OnSaveHistos), 
-                ("&Save Event Rate", "Save particle rates from peak detection", self.OnTSsaverate), 
+                ("Save &Parameters", "Save parameters", self.OnSaveParameters), 
+                ("Save &Histograms", "Save all histograms", self.OnSaveHistos), 
+                ("Save &Event Rate", "Save particle rates from peak detection", self.OnTSsaverate), 
+                ("Save &View Data", "Save particle rates from peak detection", self.OnSaveViewData),
                 ("&Quit", "Quit program", self.OnCloseWindow)), # label, status and handler
                #
                ("&Actions",
@@ -1344,6 +1346,48 @@ class PlotFrame(QtWidgets.QMainWindow):
                h_file = dir + '/'+ name +'_{0}.data'.format(i)
                h.save(h_file)
           print(" all histograms saved")
+
+     def OnSaveViewData(self):
+          V = None
+          if self.par["corrected"]:
+               V = self.Vcorr
+          else:
+               V = self.V         
+          if (self.t is None) or (V is None):
+               print("Nothing to plot !")
+               return         
+          # get current data window limits
+          tmin, tmax = self.axes.get_xlim()
+          dt = tmax - tmin
+          print(f'Current x-axis limits = ({tmin},{tmax})')
+          # calculate the data slice
+          sl = get_window(tmin, self.t, tmax)
+          print(f'Data slice = {sl}')
+          # Create a file-open dialog in the current directory
+          filetypes="*.npz"
+          # use a regular file dialog
+          if self.view_dir == None:
+              self.view_dir = os.getcwd()
+          file_dlg=QtWidgets.QFileDialog.getSaveFileName(self, 'Select nps file name', self.hist_dir,
+                                                         filetypes)
+          if file_dlg[0] != '':
+               # User has selected something, get the path, set the window's title to the path
+               filename = file_dlg[0]
+               # analyze the file name
+               dir, fname = os.path.split(filename)
+               name, ext = os.path.splitext(fname)
+               # store relevant file information
+               # get current
+               name += f'_{tmin:.2e}_{dt:.2e}' 
+               full_name = dir + '/' + name
+               print(f"Save data to {full_name}") 
+          else:
+               print("so, you changed your mind, I will do nothing")
+               filename = None
+               return
+          np.savez(full_name, t = self.t[sl], V = V[sl])
+          print(" all data saved saved!")
+
 
      def show_histos(self, n):
           if self.histos == []:

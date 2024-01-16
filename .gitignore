@@ -1,6 +1,7 @@
 *.pyc
 *.pyd
-.pyf
+*.pyf
+*.hws
 __pycache__/
 *.o
 *.so

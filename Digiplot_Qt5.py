@@ -19,6 +19,8 @@ from NavToolBar_CustomDialogs import NavigationToolbar, NumberDialog, TextDialog
 import ffind_peaks as FP
 import itertools
 
+import bkg_subtraction as BS
+
 # matplotlibn colors
 import matplotlib.colors as COL
 # colors list
@@ -67,8 +69,7 @@ def get_window(xmin, x, xmax):
      nmin = max( 0, int( (xmin - x[0])/dx ))
      nmax = min( (int( (xmax - x[0])/dx ) + 1), len(x) -1 )
      return slice(nmin, nmax + 1)
-     
-     
+         
 def find_peaks(yval, ystep, xval = None, \
                xmin = None, xmax = None, limits = None, \
                power = 5,\
@@ -154,7 +155,7 @@ def load_gage_data(self, chan_num):
     # load gage digitizer data
     data_root = 'wfm_group0/traces/trace' + chan_num + '/'
     xaxis_access = data_root + 'x-axis'
-    self.t0 = self.f[xaxis_access].attrs['start']
+    self.t0 = self.f[xaxis_access].attrs['start'] + self.par['toffset']
     self.dt = self.f[xaxis_access].attrs['increment']
     # measured data
     # scale dataset
@@ -217,8 +218,8 @@ def load_NI_data(self, chan_num):
         mb.exec_()
         return
     self.ndata = self.nall
-    self.ti = self.t0
-    self.tf = self.t0 + (self.ndata-1)*self.dt
+    self.ti = self.t0 - self.par['toffset']
+    self.tf = self.t0 + (self.ndata-1)*self.dt - self.par['toffset']
     # set range
     #self.par["tmin"] = self.t0
     #self.par["tmax"] = self.t0 + (self.ndata-1)*self.dt
@@ -487,11 +488,15 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par["use_limits"] = False
           self.par["auto_histo"] = True
           self.par["auto_time_range"] = True
-          self.par["filtered"] = False
+          self.par["corrected"] = False
           self.par["draw_lines"] = False
           self.par["draw_points"] = True
           self.par["hide_peaks"] = False
           self.par["Detector channel"] = 0
+          self.par["Bkg Detector channel"] = 4
+          self.par["Bkg Iter"] = 5
+          self.par["Bkg Delta T"] = 200e-6
+          self.par["toffset"] = 0.
           self.par["tmin"] = -1.e30
           self.par["tmax"] = 1.e30
           self.par["xmin"] = -1.e30
@@ -527,7 +532,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.t = None
           self.V = None
           self.limits = []
-          self.Vinv = None
+          self.Vcorr = None
           self.MINTAB = None
           self.MAXTAB = None
           self.histo = None
@@ -632,6 +637,7 @@ class PlotFrame(QtWidgets.QMainWindow):
 #                ("&Scan data directory", "Scan directory", self.OnScan),
 #                (None, None, None),  # creates a separator bar in the menu
                 ("&Plot", "Plot data", self.OnPlot),
+                ("S&ubtract Background", "Subtract background", self.OnSubtractBkg),
                 ("&Save Limits", "save curent x-axis limits", self.OnSaveLimits),
                 ("&Choose  Limits", "use saved x-axis limits", self.OnChooseLimits),
                 ("&Clear  Limits", "clear x-axis limits", self.OnClearLimits),
@@ -662,7 +668,17 @@ class PlotFrame(QtWidgets.QMainWindow):
                 (None, None, None),
                 ("Time &Slicing", "Set time slice parameters", self.OnSetTimeSlice),
                 (None, None, None),
-                ("Moving &Average", "Set number points", self.OnSetMovingAvg)),
+                ("Moving &Average", "Set number points", self.OnSetMovingAvg),
+                (None, None, None),
+                ("Time offset", "Set time offset", self.OnSetTimeOffset)),               
+               ("&Bkg Subtraction Parameters",
+#                ("&Data directory", "Set data directory", self.OnSetScanDir), 
+#                (None, None, None),
+                ("&Background Channel", "Set backgound channel", self.OnSelectBkgChannel), 
+                (None, None, None),
+                ("&Time Window", "Set time window width", self.OnSelectBkgTimeWindow), 
+                (None, None, None),
+                ("Moving Average &Iterations", "Set number interations for moving averagew", self.OnSelectBkgMovingAvgIter)),
                ("&FFT",
                 ("&Calculate", "Calculate FFT", self.OnFFTcalc), 
                 ("&Freq.Cut", "Apply freq. Cut", self.OnFFTcutfilter),
@@ -701,7 +717,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                 ("Plot &Histogram Points ", "Plot points instead of bars", self.OnToggleHistoPoints, 'CHECK'),
                 ("&Auto Histogram Limits ", "Do not calculate histogram limits automatically", self.OnToggleHistolimits, 'CHECK'),
                 (None, None, None),
-                ("&Filtered", "Use filtered data", self.OnUsefiltered, 'CHECK')),
+                ("&Corrected", "Use corrected data", self.OnUseCorrected, 'CHECK')),
                )
                
      def createMenubar(self):
@@ -742,7 +758,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                   if 'Hide Peaks' in eachItem[0]: subMenu.setChecked(self.par['hide_peaks'])
                   if 'Auto Histogram' in eachItem[0]: subMenu.setChecked(self.par['auto_histo'])
                   if 'Histogram Points' in eachItem[0]: subMenu.setChecked(self.par['plot_histo_points'])
-                  if 'Filtered' in eachItem[0]: subMenu.setChecked(self.par['filtered'])
+                  if 'Corrected' in eachItem[0]: subMenu.setChecked(self.par['corrected'])
                   if 'Use npz file' in eachItem[0]: subMenu.setChecked(self.par['use_npz_file'])
                   if 'Use NI file' in eachItem[0]: subMenu.setChecked(self.par['use_NI_file'])
                   if 'Use GaGe file' in eachItem[0]: subMenu.setChecked(self.par['use_GaGe_file'])
@@ -812,7 +828,14 @@ class PlotFrame(QtWidgets.QMainWindow):
 
      def load_data(self):
          # reload data file
-         # get channel number         
+         # get channel number  
+         if (self.name is None) or (self.name == ''):
+             print('No files loaded yet , nothing to bedone !')
+             mb=QtWidgets.QMessageBox(self)
+             mb.setText('No files loaded yet , nothing to bedone !')
+             mb.exec_()
+
+             return
          chan_num = "%0d"%(int(self.par["Detector channel"]))
          self.stBar1.setText('Current file : %s / Channel : %s'%(self.name+self.ext, chan_num))
          # get the data according to the data file type
@@ -882,7 +905,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                item_dict["Use Limits"].setChecked(self.par["use_limits"]); print("Use Limits = ",self.par["use_limits"])
                item_dict["Auto Histogram Limits"].setChecked(self.par["auto_histo"]); print("Auto Histogram Limits = ", self.par["auto_histo"])
                item_dict['Histogram Points'].setChecked(self.par['plot_histo_points']);print(("Plot Histogram Points = ", self.par["plot_histo_points"]))
-               item_dict["Filtered"].setChecked(self.par["filtered"]); print("Filtered = ", self.par["filtered"])
+               item_dict["Corrected"].setChecked(self.par["corrected"]); print("corrected = ", self.par["corrected"])
                item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print("draw_lines = ", self.par["draw_lines"])
                item_dict["Plot Points"].setChecked(self.par["draw_points"]); print("draw_points = ", self.par["draw_points"])
                item_dict["Hide Peaks"].setChecked(self.par["hide_peaks"]); print("hide_peaks = ", self.par["hide_peaks"])
@@ -928,7 +951,7 @@ class PlotFrame(QtWidgets.QMainWindow):
                item_dict["Use Limits"].setChecked(self.par["use_limits"]); print(("Use Limits = ",self.par["use_limits"]))
                item_dict["Auto Histogram Limits"].setChecked(self.par["auto_histo"]); print(("Auto Histogram Limits = ", self.par["auto_histo"]))
                item_dict['Histogram Points'].setChecked(self.par['plot_histo_points']);print(("Plot Histogram Points = ", self.par["plot_histo_points"]))
-               item_dict["Filtered"].setChecked(self.par["filtered"]); print(("Filtered = ", self.par["filtered"]))
+               item_dict["Corrected"].setChecked(self.par["corrected"]); print(("corrected = ", self.par["corrected"]))
                item_dict["Plot Lines"].setChecked(self.par["draw_lines"]); print(("draw_lines = ", self.par["draw_lines"]))
                item_dict["Plot Points"].setChecked(self.par["draw_points"]); print(("draw_points = ", self.par["draw_points"]))
                item_dict["Hide Peaks"].setChecked(self.par["hide_peaks"]); print(("hide_peaks = ", self.par["hide_peaks"]))
@@ -964,11 +987,12 @@ class PlotFrame(QtWidgets.QMainWindow):
                o.write( "%s  =  %r\n "%(key, self.par[key] ))
           o.close()
           
-     def get_time_window(self, tmin, tmax):
-          # find range of time values between tmin and tmax
-          nmin = int( (tmin - self.t0)/self.dt )
-          nmax = min( (int( (tmax - self.t0)/self.dt ) + 1), self.nall -1 )
-          return slice(nmin, nmax + 1)
+
+     def check_time_limits(self, t):
+         # make sure limits are within time range, if not adjust them
+         self.par["tmin"] = max(t[0], self.par["tmin"])
+         self.par["tmax"] = min(t[-1], self.par["tmax"])
+
 
      def select_data(self):
           # select data range to work on
@@ -978,12 +1002,10 @@ class PlotFrame(QtWidgets.QMainWindow):
           # debugging
           if self.ndata == 0:
                return
-          if (self.par["tmin"] < self.tall[0]):
-               self.par["tmin"] = self.tall[0]
-          if (self.par["tmax"] > self.tall[-1]):
-               self.par["tmax"] = self.tall[-1]
+          self.check_time_limits(self.tall)   
           print("Get Window")
-          sl = self.get_time_window( self.par["tmin"], self.par["tmax"])
+          sl = get_window( self.par["tmin"], self.tall,  self.par["tmax"])
+          print(f'DigiPlot time slice = {sl}')
           # the final value
           print("Recalculate")
           self.ndata = sl.stop - sl.start
@@ -1075,8 +1097,8 @@ class PlotFrame(QtWidgets.QMainWindow):
           #if (self.par['Detector channel'] ==  self.toolbar.ch_n) and (self.name[-6:] == self.toolbar.fn):
           #    return
           V = None
-          if self.par["filtered"]:
-               V = self.Vinv
+          if self.par["corrected"]:
+               V = self.Vcorr
           else:
                V = self.V
           if (self.t is None) or (V is None):
@@ -1093,6 +1115,33 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.toolbar.fn = self.name[-6:]
         
           self.toolbar.thinning()
+    
+     def OnSubtractBkg(self):
+        print('Will perfrom Bkg Subtraction using the follwing parameters:')
+        print(f'Bkg data channel =  {self.par["Bkg Detector channel"]}')
+        print(f'Time window = {self.par["Bkg Delta T"]}')
+        print(f'Number of moving avarage iterations  = {self.par["Bkg Iter"]}')
+        print(f'Moving agverage width = {self.par["Bkg Delta T"]}')
+        # initialize bkg subtraction
+        file_name = self.name + self.ext
+        bd = BS.bkg(file_name, self.dir,\
+                    data_channel = self.par['Detector channel'],\
+                    bkg_channel = self.par['Bkg Detector channel'],\
+                    t_min = self.par["tmin"]*BS.us, \
+                    t_max = self.par["tmax"]*BS.us, \
+                    t_offset = self.par["toffset"]*BS.us, \
+                    moving_average = self.par["Navg"],\
+                    niter = self.par["Bkg Iter"],\
+                    time_window = self.par["Bkg Delta T"]*BS.us)
+        bd.load_data()
+        bd.moving_average()
+        # perform the correction and save the data
+        tl, self.Vcorr = bd.correct()
+
+     def OnMovingAvgIter(self):
+         self.V = moving_average(self.V, self.par["Navg"])
+         print('Moving avg. calculated')
+        
     
      def OnSaveLimits(self):
           pkeys=['Enter Comment']
@@ -1144,11 +1193,11 @@ class PlotFrame(QtWidgets.QMainWindow):
           if (self.t is None) or (self.V is None):
                print("No data, nothing to find !")
                return
-          if self.par["filtered"]:
-               if self.Vinv is None:
-                    print("No inverted data, nothing to find !")
+          if self.par["corrected"]:
+               if self.Vcorr is None:
+                    print("No corrected data, nothing to find !")
                     return
-               V = self.Vinv
+               V = self.Vcorr
           else:
                V = self.V
           print('----------> Start peak finding :')
@@ -1365,17 +1414,17 @@ class PlotFrame(QtWidgets.QMainWindow):
           # axis-1 data within slice 
           print('resizing time data array, be patient !')
           self.t_slice = np.resize(self.t[sl], new_shape )
-          if self.par["filtered"]:
-               if self.Vinv is None:
-                    print("No inverted data, nothing to find !")
+          if self.par["corrected"]:
+               if self.Vcorr is None:
+                    print("No corrected data, nothing to find !")
                     return
-               V = self.Vinv
+               V = self.Vcorr
           else:
                V = self.V
           print('resizing Signal data array, be patient !')
           self.V_slice = np.resize(V, new_shape )
           # now the data are ready to be worked on
-          self.ts_av = np.average(self.t_slice, axis = 1)
+          self.ts_av = np.average(self.t_slice, axis = 1) + self.par['toffset']
           print(("created ", len(self.ts_av), " slices"))
 
      def tsplot(self, n):
@@ -1618,7 +1667,52 @@ class PlotFrame(QtWidgets.QMainWindow):
           
           self.OnReload()
 
+     def OnSelectBkgChannel(self):
+          # show and change parameters
+          # parameter keys
+          pkeys=['Bkg channel']
+          data = {pkeys[0]:"%d"%(int(self.par["Bkg Detector channel"]))}
+          pdlg = NumberDialog(data, self, title="Backgound Detector channel", \
+                              labels = pkeys, \
+                                  keys = pkeys, \
+                                      about_txt = "Select the Bkg channel")
+          pdlg.exec_()
+          # now set the new parameters
+          self.par['Bkg Detector channel']=int(pdlg.data[pkeys[0]])
+          pdlg.destroy()
+          
+          self.OnReload()
 
+     def OnSelectBkgTimeWindow(self):
+          # show and change the parameters
+          # parameter keys
+          pkeys=['Backgound time window']
+          # current data to be shown in the dialog
+          data = {pkeys[0]:"%5.2e"%(self.par["Bkg Delta T"]), \
+                  }
+          pdlg = NumberDialog(data, self, title="Background Time Window", \
+                              labels = pkeys, \
+                              keys = pkeys, \
+                              about_txt = "Select the time window")
+          pdlg.exec_()
+          # now set the new parameters
+          self.par["Bkg Delta T"] = float(pdlg.data[pkeys[0]])
+          
+     
+     def OnSelectBkgMovingAvgIter(self):
+          # show and change parameters
+          # parameter keys
+          pkeys=['Moving Average Iterations']
+          data = {pkeys[0]:"%d"%(int(self.par["Bkg Iter"]))}
+          pdlg = NumberDialog(data, self, title="Moving average Iterations", \
+                              labels = pkeys, \
+                                  keys = pkeys, \
+                                      about_txt = "Select number of iterations")
+          pdlg.exec_()
+          # now set the new parameters
+          self.par["Bkg Iter"]=int(pdlg.data[pkeys[0]])
+          pdlg.destroy()
+          
      def OnSelectTimeSlot(self):
           # show and change the parameters
           # parameter keys
@@ -1736,7 +1830,22 @@ class PlotFrame(QtWidgets.QMainWindow):
           self.par['Navg']=int(pdlg.data[pkeys[0]])
           print(f'Set Navg = {self.par["Navg"]}')
 
-
+     def OnSetTimeOffset(self):
+          # show and change parameters
+          # parameter keys
+          pkeys=['Time offset']
+          data = {pkeys[0]:"%f"%(self.par["toffset"])}
+          pdlg = NumberDialog(data, self, title="Set time offset", \
+                              labels = pkeys, \
+                                  keys = pkeys, \
+                                      about_txt = "enter the time offset for time axis")
+          pdlg.exec_()
+          # now set the new parameters
+          self.par['toffset']=float(pdlg.data[pkeys[0]])
+          print(f'Set toffset = {self.par["toffset"]}')
+          self.load_data()
+          self.select_data()
+          
      #----------------------------------------------------------------------
      # FFT routines
      #----------------------------------------------------------------------
@@ -1847,7 +1956,7 @@ class PlotFrame(QtWidgets.QMainWindow):
           if not self.fft.ok:
                print("No FFT")
                return
-          self.Vinv = self.fft.inv_transform()
+          self.Vcorr = self.fft.inv_transform()
           print("FFT inverted")
      #----------------------------------------------------------------------
      # options routines
@@ -1944,9 +2053,9 @@ class PlotFrame(QtWidgets.QMainWindow):
               self.toolbar.plot_peaks = True
 
               
-     def OnUsefiltered(self, event):
-          self.par["filtered"] = not self.par["filtered"]
-          print(("use filtered = ", self.par["filtered"]))
+     def OnUseCorrected(self, event):
+          self.par["corrected"] = not self.par["corrected"]
+          print(("use corrected = ", self.par["corrected"]))
           
      def OnNothing(self):
           print("do nothing")
